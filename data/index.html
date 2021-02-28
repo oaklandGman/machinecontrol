@@ -1,25 +1,25 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <script src="myscript.js"></script>
+        <link rel="stylesheet" href="https://unpkg.com/onsenui/css/onsenui.css">
+        <link rel="stylesheet" href="https://unpkg.com/onsenui/css/onsen-css-components.min.css">
+        <script src="https://unpkg.com/onsenui/js/onsenui.min.js"></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+        <script src="/js/myscript.js"></script>
         <title>Machine Control</title>
     </head>
-    <body id="mainpage">
+    <ons-page id="mainpage">
         <div id="pageone">
             <div id="diagPanel">
-                <h2>
-                    Diagnostic Log
-                </h2>
-                <ul id="diagList">
-                    <li>Newest entry first
-                    </li>
-                </ul>
+                <ons-list-title>Diagnostic Log  </ons-list-title>
+                <ons-list id="diagList">
+                    <ons-list-item>Newest entry first
+                    </one-list-item>
+                </ons-list>
             </div>
-            <div data-role="footer">
-                <h2 id="footerText">
-                    Not Connected!
-                </h2>
-            </div>
+            <ons-bottom-toolbar id="footerText">
+                Not Connected!
+            </ons-bottom-toolbar>
         </div>
     </body>
 </html>

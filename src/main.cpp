@@ -5,26 +5,27 @@
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
 #include <SPIFFSEditor.h>
+#include "my_passwords.h"
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 AsyncEventSource events("/events");
 
-
-const char* ssid = "Tell my WiFi I love her";
-const char* password = "2317239216";
+#ifndef PASSWORD_SET
+const char* ssid = "xxxx";
+const char* password = "xxxx";
+const char* http_username = "xxxx";
+const char* http_password = "xxxx";
+#endif
 const char* PARAM_MESSAGE = "Machine Control";
 const char * hostName = "machine";
-const char* http_username = "admin";
-const char* http_password = "admin";
-
 // IO pin assignments
 const int BIG_MOTOR_STEP = 19;
 const int BIG_MOTOR_DIR = 21;
 const int BIG_MOTOR_SLEEP = 22;
-const int LUBE_PUMP_STEP = 25;
-const int LUBE_PUMP_DIR = 23;
-const int LUBE_PUMP_SLEEP = 26;
+const int SMALL_MOTOR_STEP = 25;
+const int SMALL_MOTOR_DIR = 23;
+const int SMALL_MOTOR_SLEEP = 26;
 
 const int EMERGENCY_STOP_PIN = 35; //define the IO pin the emergency stop switch is connected to
 const int LIMIT_SW1 = 33;
@@ -33,12 +34,11 @@ const int LIMIT_SW2 = 27;
 // Speed settings
 const unsigned int BIG_MOTOR_HZ = 9000;
 const unsigned int BIG_MOTOR_ACCEL = 40000;
-const unsigned int LUBE_PUMP_HZ = 200;
-const unsigned int LUBE_PUMP_ACCEL = 4294967295;
+const unsigned int SMALL_MOTOR_HZ = 200;
+const unsigned int SMALL_MOTOR_ACCEL = 4294967295;
 
-unsigned long previousMillis = 0;
 unsigned int bigmotorSpeed = 100;
-unsigned int lubepumpSpeed = LUBE_PUMP_HZ;
+unsigned int smallmotorSpeed = SMALL_MOTOR_HZ;
 unsigned int bigmotorMove = 50;
 bool bigmotorDir = true;
 
@@ -47,9 +47,55 @@ TaskHandle_t taskOTA;
 
 FastAccelStepperEngine engine = FastAccelStepperEngine();
 FastAccelStepper *big_motor = NULL;
-FastAccelStepper *lube_pump = NULL;
+FastAccelStepper *small_motor = NULL;
 
 void runStepper(void * parameter) {
+  unsigned long previousMillis = 0;
+  unsigned long currentMillis = millis();
+  uint localMove = 0;
+
+  for (;;) { // loop forever
+    currentMillis = millis();  
+    
+    if (currentMillis - previousMillis >= 500) {
+      previousMillis = millis();
+      if (!big_motor->isMotorRunning()) { // test to see if motor is done moving
+        Serial.println("Big motor done!");
+
+        big_motor->setSpeedInHz(bigmotorSpeed);
+        bigmotorDir = bigmotorDir ^ 1; // flip direction
+        if (bigmotorDir) {
+          localMove = bigmotorMove;
+        } else {
+          bigmotorSpeed = bigmotorSpeed + 100; // increase speed
+          if (bigmotorSpeed > BIG_MOTOR_HZ) { // reset speed
+            bigmotorSpeed = 100;
+          }
+          localMove = bigmotorMove * (-1);
+          bigmotorMove = bigmotorMove + 50; // increase travel
+          if (bigmotorMove > 1000) { // reset travel
+            bigmotorMove = 50;
+          }
+        }
+        
+        big_motor->move(localMove);
+        Serial.printf("Big motor speed %u, moving %i steps\n", bigmotorSpeed, localMove);
+      } else {
+        Serial.println("M");
+      }
+
+      // if (!small_motor->isMotorRunning()) {
+      //   // Serial.println("Small motor done!");
+      //   Serial.println("Small motor moving 1000 steps.");
+      //   small_motor->move(2000);
+      // } else {
+      //   Serial.println("L");
+      // }
+    }
+
+    delay(5);
+
+  } 
 }
 
 void runOTA(void * parameter) {
@@ -89,12 +135,12 @@ void setup(){
     .onStart([]() {
       String type;
       // big_motor.stop();
-      // lube_pump.stop();
+      // small_motor.stop();
       big_motor->forceStopAndNewPosition(0);
-      lube_pump->forceStopAndNewPosition(0);
+      small_motor->forceStopAndNewPosition(0);
 
       digitalWrite(BIG_MOTOR_SLEEP, LOW); // turn off driver
-      digitalWrite(LUBE_PUMP_SLEEP, LOW); // turn off driver
+      digitalWrite(SMALL_MOTOR_SLEEP, LOW); // turn off driver
       if (ArduinoOTA.getCommand() == U_FLASH)
         type = "sketch";
       else // U_SPIFFS
@@ -204,7 +250,6 @@ void setup(){
   });
   
   server.begin();
-
   
   Serial.println("Ready");
   Serial.print("IP address: ");
@@ -212,7 +257,7 @@ void setup(){
 
   engine.init();
   big_motor = engine.stepperConnectToPin(BIG_MOTOR_STEP);
-  lube_pump = engine.stepperConnectToPin(LUBE_PUMP_STEP);
+  small_motor = engine.stepperConnectToPin(SMALL_MOTOR_STEP);
 
   if (big_motor) { // set up drive motor
     big_motor->setDirectionPin(BIG_MOTOR_DIR);
@@ -223,29 +268,28 @@ void setup(){
     big_motor->setAcceleration(BIG_MOTOR_ACCEL);   
   } 
 
-  if (lube_pump) { // set up lube pump
-    lube_pump->setDirectionPin(LUBE_PUMP_DIR);
-    lube_pump->setEnablePin(LUBE_PUMP_SLEEP);
-    lube_pump->setAutoEnable(true);
+  if (small_motor) { // set up small motor
+    small_motor->setDirectionPin(SMALL_MOTOR_DIR);
+    small_motor->setEnablePin(SMALL_MOTOR_SLEEP);
+    small_motor->setAutoEnable(true);
 
-    lube_pump->setSpeedInHz(LUBE_PUMP_HZ);      
-    lube_pump->setAcceleration(LUBE_PUMP_ACCEL);   
+    small_motor->setSpeedInHz(SMALL_MOTOR_HZ);      
+    small_motor->setAcceleration(SMALL_MOTOR_ACCEL);   
   }
 
-  digitalWrite(LUBE_PUMP_SLEEP, LOW); // turn off driver
-  // Serial.println("Big motor moving 1000 steps");
+  digitalWrite(SMALL_MOTOR_SLEEP, LOW); // turn off driver
 
-  // lube_pump->move(1000); // test pump
+  // small_motor->move(1000); // test motor
   // big_motor->move(1000); // test motor
 
-  // xTaskCreatePinnedToCore(
-  //   runStepper, /* Function to implement the task */
-  //   "taskStepper", /* Name of the task */
-  //   10000,  /* Stack size in words */
-  //   NULL,  /* Task input parameter */
-  //   0,  /* Priority of the task */
-  //   &taskStepper,  /* Task handle. */
-  //   0); /* Core where the task should run */
+  xTaskCreatePinnedToCore(
+    runStepper, /* Function to implement the task */
+    "taskStepper", /* Name of the task */
+    10000,  /* Stack size in words */
+    NULL,  /* Task input parameter */
+    0,  /* Priority of the task */
+    &taskStepper,  /* Task handle. */
+    0); /* Core where the task should run */
 
   //  xTaskCreatePinnedToCore(
   //    runOTA, /* Function to implement the task */
@@ -259,48 +303,8 @@ void setup(){
 
 void loop(){
   ArduinoOTA.handle();
+  ws.cleanupClients(); // clean up any disconnected ws clients
   
   delay(10);
 }
 
-void runBigmotor() {
-  unsigned long currentMillis = millis(); 
-  uint localMove = 0;
-  
-  if (currentMillis - previousMillis >= 500) {
-    previousMillis = millis();
-    ws.cleanupClients(); // clean up any disconnected ws clients
-    if (!big_motor->isMotorRunning()) { // test to see if motor is done moving
-      Serial.println("Big motor done!");
-
-      big_motor->setSpeedInHz(bigmotorSpeed);
-      bigmotorDir = bigmotorDir ^ 1; // flip direction
-      if (bigmotorDir) {
-        localMove = bigmotorMove;
-      } else {
-        bigmotorSpeed = bigmotorSpeed + 100; // increase speed
-        if (bigmotorSpeed > BIG_MOTOR_HZ) { // reset speed
-          bigmotorSpeed = 100;
-        }
-        localMove = bigmotorMove * (-1);
-        bigmotorMove = bigmotorMove + 50; // increase travel
-        if (bigmotorMove > 1000) { // reset travel
-          bigmotorMove = 50;
-        }
-      }
-      
-      big_motor->move(localMove);
-      Serial.printf("Big motor speed %u, moving %i steps\n", bigmotorSpeed, localMove);
-    } else {
-      Serial.println("M");
-    }
-
-    // if (!lube_pump->isMotorRunning()) {
-    //   // Serial.println("Lube done!");
-    //   Serial.println("Lube pump moving 1000 steps.");
-    //   lube_pump->move(2000);
-    // } else {
-    //   Serial.println("L");
-    // }
-  }
-}
