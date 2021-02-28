@@ -60,7 +60,8 @@ void runStepper(void * parameter) {
     if (currentMillis - previousMillis >= 500) {
       previousMillis = millis();
       if (!big_motor->isMotorRunning()) { // test to see if motor is done moving
-        Serial.println("Big motor done!");
+        // Serial.println("Big motor done!");
+        // ws.textAll("Big motor done!");
 
         big_motor->setSpeedInHz(bigmotorSpeed);
         bigmotorDir = bigmotorDir ^ 1; // flip direction
@@ -79,9 +80,11 @@ void runStepper(void * parameter) {
         }
         
         big_motor->move(localMove);
-        Serial.printf("Big motor speed %u, moving %i steps\n", bigmotorSpeed, localMove);
+        Serial.printf("speed %u moving %i\n", bigmotorSpeed, localMove);
+        ws.printfAll("speed %u moving %i", bigmotorSpeed, localMove);
       } else {
-        Serial.println("M");
+        // Serial.println("M");
+        // ws.textAll("M");
       }
 
       // if (!small_motor->isMotorRunning()) {
@@ -100,6 +103,7 @@ void runStepper(void * parameter) {
 
 void runOTA(void * parameter) {
 }
+
 
 void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len){
   if(type == WS_EVT_CONNECT){
@@ -138,19 +142,25 @@ void setup(){
       // small_motor.stop();
       big_motor->forceStopAndNewPosition(0);
       small_motor->forceStopAndNewPosition(0);
+      ws.textAll("Shutting down for OTA update");
+      server.end(); // shutdown webserver
+      vTaskSuspend(taskStepper); // shutdown stepper motion task
 
       digitalWrite(BIG_MOTOR_SLEEP, LOW); // turn off driver
       digitalWrite(SMALL_MOTOR_SLEEP, LOW); // turn off driver
-      if (ArduinoOTA.getCommand() == U_FLASH)
+      if (ArduinoOTA.getCommand() == U_FLASH) {
         type = "sketch";
-      else // U_SPIFFS
+      } else { // U_SPIFFS 
         type = "filesystem";
+        SPIFFS.end(); // unmount filesystem
+    }
 
       // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-      Serial.println("Start updating " + type);
+      Serial.println("OTA Update: " + type);
     })
     .onEnd([]() {
       Serial.println("\nEnd");
+      ESP.restart();
     })
     .onProgress([](unsigned int progress, unsigned int total) {
       Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
@@ -162,6 +172,7 @@ void setup(){
       else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
       else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
       else if (error == OTA_END_ERROR) Serial.println("End Failed");
+      ESP.restart();
     });
 
   ArduinoOTA.setHostname(hostName);
