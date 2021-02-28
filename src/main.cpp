@@ -41,6 +41,7 @@ unsigned int bigmotorSpeed = 100;
 unsigned int smallmotorSpeed = SMALL_MOTOR_HZ;
 unsigned int bigmotorMove = 50;
 bool bigmotorDir = true;
+uint8_t bigmotorTest = 0; // no test by default
 
 TaskHandle_t taskStepper;
 TaskHandle_t taskOTA;
