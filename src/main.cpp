@@ -139,16 +139,18 @@ void setup(){
   ArduinoOTA
     .onStart([]() {
       String type;
-      // big_motor.stop();
-      // small_motor.stop();
+
+      vTaskSuspend(taskStepper); // shutdown stepper motion task
+
       big_motor->forceStopAndNewPosition(0);
       small_motor->forceStopAndNewPosition(0);
+
       ws.textAll("Shutting down for OTA update");
       server.end(); // shutdown webserver
-      vTaskSuspend(taskStepper); // shutdown stepper motion task
 
       digitalWrite(BIG_MOTOR_SLEEP, LOW); // turn off driver
       digitalWrite(SMALL_MOTOR_SLEEP, LOW); // turn off driver
+
       if (ArduinoOTA.getCommand() == U_FLASH) {
         type = "sketch";
       } else { // U_SPIFFS 
