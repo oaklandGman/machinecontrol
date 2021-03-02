@@ -5,21 +5,41 @@
         <link rel="stylesheet" href="https://unpkg.com/onsenui/css/onsen-css-components.min.css">
         <script src="https://unpkg.com/onsenui/js/onsenui.min.js"></script>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+        <script src="https://rawgit.com/kawanet/msgpack-lite/master/dist/msgpack.min.js"></script>
         <script src="/js/myscript.js"></script>
         <title>Machine Control</title>
     </head>
-    <ons-page id="mainpage">
-        <div id="pageone">
-            <div id="diagPanel">
-                <ons-list-title>Diagnostic Log  </ons-list-title>
-                <ons-list id="diagList">
-                    <ons-list-item>Newest entry first
-                    </one-list-item>
-                </ons-list>
-            </div>
-            <ons-bottom-toolbar id="footerText">
-                Not Connected!
-            </ons-bottom-toolbar>
-        </div>
-    </body>
+
+    <ons-page id="main">
+        <ons-toolbar>
+            <div class="center" id="headerText">Machine Control</div>
+        </ons-toolbar>
+    
+        <ons-button name="btnteston" id="pushButton" class="button" modifier="large">Start Motor Test</ons-button>
+        <ons-button name="btntestoff" id="pushButton" class="button" modifier="large">Stop Motor Test</ons-button>
+
+        <label for="numberBox">Number input</label>
+        <ons-input name="numeric1" input-id="numberBox" class="numbox" type="number" min="0" max="200"></ons-input>
+        
+        <ons-row style="margin-top: 20px;">
+            <ons-col width="40px" style="text-align: center; line-height: 31px;">
+                <ons-icon icon="md-brightness-low"></ons-icon>
+            </ons-col>
+            <ons-col>
+                <ons-range name="numeric2" input-id="rangeSlider" class="numbox" style="width: 100%;" value="50"></ons-range>
+            </ons-col>
+            <ons-col width="40px" style="text-align: center; line-height: 31px;">
+                <ons-icon icon="md-brightness-high"></ons-icon>
+            </ons-col>
+        </ons-row>
+
+        <ons-list-title>Diagnostic Log</ons-list-title>
+        <ons-scroller style="height: 200px">
+            <ons-list id="diagList"></ons-list>
+        </ons-scroller>
+
+        <ons-bottom-toolbar>
+            <div style="text-align: center;" id="footerText">Not Connected</div>
+        </ons-bottom-toolbar>
+    </ons-page>
 </html>

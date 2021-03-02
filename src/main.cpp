@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ArduinoOTA.h>
+#include <ArduinoJson.h>
 #include <SPIFFS.h>
 #include <FastAccelStepper.h>
 #include <ESPAsyncWebServer.h>
@@ -43,21 +44,67 @@ unsigned int bigmotorMove = 50;
 bool bigmotorDir = true;
 uint8_t bigmotorTest = 0; // no test by default
 
-TaskHandle_t taskStepper;
-TaskHandle_t taskOTA;
+struct WSmsg // structure for msgpack messages to send/recv over websocket
+{
+  uint8_t msgId;
+  uint8_t msgArray[48]; // 48 byte array for a message, hope that's enough!
+};
+struct WScmd // structure to define commands received from user via websocket
+{
+  uint8_t fnc; // one byte function
+  uint8_t cmd; // one byte command 
+  int dat; // four bytes of data
+};
+
+struct MOTcmd // structure to define commands for stepper motor control
+{
+  uint8_t cmd; // one byte command
+  int dat; // four bytes of data
+};
+
+TaskHandle_t taskStepper; // handle for stepper task
+TaskHandle_t taskOTA; // handle for ota task (unused)
+QueueHandle_t motQueue; // handle for motor command queue
+QueueHandle_t wsmsgQueue; // handle for websocket message queue
 
 FastAccelStepperEngine engine = FastAccelStepperEngine();
 FastAccelStepper *big_motor = NULL;
 FastAccelStepper *small_motor = NULL;
 
+void decodeMsg(char * myMessage) {
+
+}
+
 void runStepper(void * parameter) {
   unsigned long previousMillis = 0;
   unsigned long currentMillis = millis();
   uint localMove = 0;
+  struct MOTcmd command;
+  uint8_t cnt = 0;
+  uint8_t cmd = 0;
+  int dat = 0;
 
   for (;;) { // loop forever
     currentMillis = millis();  
     
+    // check queue for new commands
+    if (uxQueueMessagesWaiting(motQueue)) {
+      // queue not empty, see if anything in here is for me
+      xQueueReceive(motQueue, &command, portMAX_DELAY);
+
+      cmd = command.cmd;
+      dat = command.dat;
+      
+      ws.printfAll("Received command %u data %i", cmd, dat);
+
+      if        (cmd == 0) { // command zero
+        
+      } else if (cmd == 1) { // command one
+      }
+
+      
+
+    }
     if (currentMillis - previousMillis >= 500) {
       previousMillis = millis();
       if (!big_motor->isMotorRunning()) { // test to see if motor is done moving
@@ -81,7 +128,7 @@ void runStepper(void * parameter) {
         }
         
         big_motor->move(localMove);
-        Serial.printf("speed %u moving %i\n", bigmotorSpeed, localMove);
+        // Serial.printf("speed %u moving %i\n", bigmotorSpeed, localMove);
         ws.printfAll("speed %u moving %i", bigmotorSpeed, localMove);
       } else {
         // Serial.println("M");
@@ -105,7 +152,6 @@ void runStepper(void * parameter) {
 void runOTA(void * parameter) {
 }
 
-
 void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len){
   if(type == WS_EVT_CONNECT){
     //client connected
@@ -118,7 +164,65 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
   } else if(type == WS_EVT_ERROR){
     //error was received from the other end
     Serial.printf("ws[%s][%u] error(%u): %s\n", server->url(), client->id(), *((uint16_t*)arg), (char*)data);
-  } 
+  } else if(type == WS_EVT_DATA){
+    //data packet
+    AwsFrameInfo * info = (AwsFrameInfo*)arg;
+    if(info->final && info->index == 0 && info->len == len){
+      //the whole message is in a single frame and we got all of it's data
+      Serial.printf("ws[%s][%u] %s-message[%llu]: ", server->url(), client->id(), (info->opcode == WS_TEXT)?"text":"binary", info->len);
+      if(info->opcode == WS_TEXT){ // dump text message to debug console
+        data[len] = 0;
+        Serial.printf("%s\n", (char*)data);
+      } else { // dump binary message to debug console
+        for(size_t i=0; i < info->len; i++){
+          Serial.printf("%02x ", data[i]);
+        }
+        Serial.printf("\n");
+      }
+      if(info->opcode == WS_TEXT) { // acknowledge text message
+        client->text("I got your text message");
+      } else { // acknowledge binary message
+        client->text("I got your binary message"); // send ack to client
+        struct WSmsg tmpBuffer;
+        if (sizeof(data) <= sizeof(tmpBuffer.msgArray)) { // array small enough to fit in queue
+          for (size_t i=0; i < info->len; i++){
+            tmpBuffer.msgArray[i] = data[i]; // copy received array into buffer
+          }
+          tmpBuffer.msgId = client->id(); // grab client id, just for giggles
+          xQueueSend(wsmsgQueue, &tmpBuffer, portMAX_DELAY); // pass pointer for the message to the queue
+        }
+      }
+    } else {
+      //message is comprised of multiple frames or the frame is split into multiple packets
+      if(info->index == 0){
+        if(info->num == 0)
+          Serial.printf("ws[%s][%u] %s-message start\n", server->url(), client->id(), (info->message_opcode == WS_TEXT)?"text":"binary");
+        Serial.printf("ws[%s][%u] frame[%u] start[%llu]\n", server->url(), client->id(), info->num, info->len);
+      }
+
+      Serial.printf("ws[%s][%u] frame[%u] %s[%llu - %llu]: ", server->url(), client->id(), info->num, (info->message_opcode == WS_TEXT)?"text":"binary", info->index, info->index + len);
+      if(info->message_opcode == WS_TEXT){
+        data[len] = 0;
+        Serial.printf("%s\n", (char*)data);
+      } else {
+        for(size_t i=0; i < len; i++){
+          Serial.printf("%02x ", data[i]);
+        }
+        Serial.printf("\n");
+      }
+
+      if((info->index + len) == info->len){
+        Serial.printf("ws[%s][%u] frame[%u] end[%llu]\n", server->url(), client->id(), info->num, info->len);
+        if(info->final){
+          Serial.printf("ws[%s][%u] %s-message end\n", server->url(), client->id(), (info->message_opcode == WS_TEXT)?"text":"binary");
+          if(info->message_opcode == WS_TEXT)
+            client->text("I got your text message");
+          else
+            client->binary("I got your binary message");
+        }
+      }
+    }
+  }  
 }
 
 void setup(){
@@ -130,6 +234,7 @@ void setup(){
     Serial.println("Connection Failed! Rebooting...");
     delay(5000);
     ESP.restart();
+    delay(5000);
   }
 
   server.on("/hello", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -140,12 +245,12 @@ void setup(){
     .onStart([]() {
       String type;
 
+      ws.textAll("Shutting down for OTA update");
       vTaskSuspend(taskStepper); // shutdown stepper motion task
 
       big_motor->forceStopAndNewPosition(0);
       small_motor->forceStopAndNewPosition(0);
 
-      ws.textAll("Shutting down for OTA update");
       server.end(); // shutdown webserver
 
       digitalWrite(BIG_MOTOR_SLEEP, LOW); // turn off driver
@@ -164,6 +269,7 @@ void setup(){
     .onEnd([]() {
       Serial.println("\nEnd");
       ESP.restart();
+      delay(5000);
     })
     .onProgress([](unsigned int progress, unsigned int total) {
       Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
@@ -176,6 +282,7 @@ void setup(){
       else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
       else if (error == OTA_END_ERROR) Serial.println("End Failed");
       ESP.restart();
+      delay(5000);
     });
 
   ArduinoOTA.setHostname(hostName);
@@ -296,6 +403,17 @@ void setup(){
   // small_motor->move(1000); // test motor
   // big_motor->move(1000); // test motor
 
+  motQueue = xQueueCreate(5, sizeof(struct MOTcmd) );
+  if (motQueue == NULL) {
+    Serial.println("Error creating motQueue");
+  }
+
+  wsmsgQueue = xQueueCreate(5, sizeof(struct WSmsg) );
+  if (wsmsgQueue == NULL) {
+    Serial.println("Error creating wsmsgQueue");
+  }
+
+
   xTaskCreatePinnedToCore(
     runStepper, /* Function to implement the task */
     "taskStepper", /* Name of the task */
@@ -319,6 +437,29 @@ void loop(){
   ArduinoOTA.handle();
   ws.cleanupClients(); // clean up any disconnected ws clients
   
+  if ( uxQueueMessagesWaiting(wsmsgQueue) ) { // message in the queue, dump it to debug console
+    struct WSmsg data; // buffer for the message data
+    xQueueReceive(wsmsgQueue, &data, portMAX_DELAY); // grab message from queue
+    Serial.printf("Received msg from client %u: ", data.msgId);
+    for (size_t i=0; i < sizeof(data.msgArray) - 1; i++ ) {
+      Serial.printf("%02x ", data.msgArray[i]);
+    }
+    Serial.println();
+
+    StaticJsonDocument<100> testDocument;
+  
+    DeserializationError error = deserializeMsgPack(testDocument, (char *) data.msgArray);
+  
+    if (error) {
+      Serial.print("Deserialization failed with error: ");
+      Serial.println(error.c_str());
+      return;
+    }
+
+    serializeJsonPretty(testDocument, Serial);
+      
+  }
+
   delay(10);
 }
 
