@@ -5,7 +5,7 @@
         <link rel="stylesheet" href="https://unpkg.com/onsenui/css/onsen-css-components.min.css">
         <script src="https://unpkg.com/onsenui/js/onsenui.min.js"></script>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-        <script src="https://rawgit.com/kawanet/msgpack-lite/master/dist/msgpack.min.js"></script>
+        <script crossorigin src="https://unpkg.com/@msgpack/msgpack"></script>
         <script src="/js/myscript.js"></script>
         <title>Machine Control</title>
     </head>
@@ -14,24 +14,43 @@
         <ons-toolbar>
             <div class="center" id="headerText">Machine Control</div>
         </ons-toolbar>
-    
-        <ons-button name="btnteston" id="pushButton" class="button" modifier="large">Start Motor Test</ons-button>
-        <ons-button name="btntestoff" id="pushButton" class="button" modifier="large">Stop Motor Test</ons-button>
-
-        <label for="numberBox">Number input</label>
-        <ons-input name="numeric1" input-id="numberBox" class="numbox" type="number" min="0" max="200"></ons-input>
+        <div style="text-align: center;">
+            <ons-list>
+                <ons-list-item>
+                    <div class="center">
+                        Enable motor test
+                      </div>
+                      <div class="right">
+                        <ons-switch id="motortest"></ons-switch>
+                      </div>
+                </ons-list-item>
+                <ons-list-item>
+                    <div class="center">
+                        Enable auto stroke
+                      </div>
+                      <div class="right">
+                        <ons-switch id="autostroke"></ons-switch>
+                      </div>
+                </ons-list-item>
+                <ons-list-item>
+                    <div class="center">
+                        Enable auto lube
+                      </div>
+                      <div class="right">
+                        <ons-switch id="autolube"></ons-switch>
+                      </div>
+                </ons-list-item>
+            </ons-list>
+            <ons-button id="calibrate" class="button" modifier="large">Calibrate Piston</ons-button>
+            <ons-button id="shootlube" class="button" modifier="large">Shoot Lube</ons-button>
         
-        <ons-row style="margin-top: 20px;">
-            <ons-col width="40px" style="text-align: center; line-height: 31px;">
-                <ons-icon icon="md-brightness-low"></ons-icon>
-            </ons-col>
-            <ons-col>
-                <ons-range name="numeric2" input-id="rangeSlider" class="numbox" style="width: 100%;" value="50"></ons-range>
-            </ons-col>
-            <ons-col width="40px" style="text-align: center; line-height: 31px;">
-                <ons-icon icon="md-brightness-high"></ons-icon>
-            </ons-col>
-        </ons-row>
+            <p><ons-input style="width: 80%;" id="strokelen" placeholder="Stroke Length" modifier="material underbar" class="numbox" type="number" min="0" max="800" float></ons-input></p>
+            <p><ons-input style="width: 80%;" id="strokedep" placeholder="Stroke Depth" modifier="material underbar" class="numbox" type="number" min="-800" max="800" float></ons-input></p>
+            <p><ons-input style="width: 80%;" id="motspeed" placeholder="Speed" modifier="material underbar" class="numbox" type="number" min="0" max="4000" float></ons-input></p>
+            <p><ons-input style="width: 80%;" id="motaccel" placeholder="Acceleration" modifier="material underbar" class="numbox" type="number" min="0" max="4000" float></ons-input></p>
+            <p><ons-input style="width: 80%;" id="lubeamt" placeholder="Lube Amount" modifier="material underbar" class="numbox" type="number" min="0" max="4000" float></ons-input></p>
+
+        </div>
 
         <ons-list-title>Diagnostic Log</ons-list-title>
         <ons-scroller style="height: 200px">

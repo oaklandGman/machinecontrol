@@ -19,7 +19,8 @@ const char* http_username = "xxxx";
 const char* http_password = "xxxx";
 #endif
 const char* PARAM_MESSAGE = "Machine Control";
-const char * hostName = "machine";
+const char* hostName = "machine";
+
 // IO pin assignments
 const int BIG_MOTOR_STEP = 19;
 const int BIG_MOTOR_DIR = 21;
@@ -27,7 +28,6 @@ const int BIG_MOTOR_SLEEP = 22;
 const int SMALL_MOTOR_STEP = 25;
 const int SMALL_MOTOR_DIR = 23;
 const int SMALL_MOTOR_SLEEP = 26;
-
 const int EMERGENCY_STOP_PIN = 35; //define the IO pin the emergency stop switch is connected to
 const int LIMIT_SW1 = 33;
 const int LIMIT_SW2 = 27;
@@ -38,75 +38,154 @@ const unsigned int BIG_MOTOR_ACCEL = 40000;
 const unsigned int SMALL_MOTOR_HZ = 200;
 const unsigned int SMALL_MOTOR_ACCEL = 4294967295;
 
-unsigned int bigmotorSpeed = 100;
 unsigned int smallmotorSpeed = SMALL_MOTOR_HZ;
-unsigned int bigmotorMove = 50;
-bool bigmotorDir = true;
-uint8_t bigmotorTest = 0; // no test by default
-
 struct WSmsg // structure for msgpack messages to send/recv over websocket
 {
   uint8_t msgId;
-  uint8_t msgArray[48]; // 48 byte array for a message, hope that's enough!
+  char msgArray[201]; // 201 byte array for a message, hope that's enough!
 };
-struct WScmd // structure to define commands received from user via websocket
-{
-  uint8_t fnc; // one byte function
-  uint8_t cmd; // one byte command 
-  int dat; // four bytes of data
-};
-
 struct MOTcmd // structure to define commands for stepper motor control
 {
-  uint8_t cmd; // one byte command
+  char cmd[16]; // command string
   int dat; // four bytes of data
 };
 
 TaskHandle_t taskStepper; // handle for stepper task
-TaskHandle_t taskOTA; // handle for ota task (unused)
+TaskHandle_t taskMSG; // handle for websocket message handling 
+
 QueueHandle_t motQueue; // handle for motor command queue
 QueueHandle_t wsmsgQueue; // handle for websocket message queue
+QueueHandle_t wsoutQueue;
 
 FastAccelStepperEngine engine = FastAccelStepperEngine();
 FastAccelStepper *big_motor = NULL;
 FastAccelStepper *small_motor = NULL;
 
-void decodeMsg(char * myMessage) {
+void wsMsgtask(void * parameter) {
+  struct WSmsg data; // buffer for the message data
+  struct MOTcmd motor; // buffer for motor control message
+  struct WSmsg msgout; // buffer for outgoing messages
 
+  unsigned long lastMillis = millis();
+
+  for (;;) { // infinite loop
+    // check receive queue every cycle
+    if ( uxQueueMessagesWaiting(wsmsgQueue) ) { // message in the queue, dump it to debug console
+      xQueueReceive(wsmsgQueue, &data, portMAX_DELAY); // grab message from queue
+      // Serial.printf("Received msg from client %u: ", data.msgId);
+      // for (size_t i=0; i < sizeof(data.msgArray) - 1; i++ ) {
+      //  Serial.printf("%02x ", data.msgArray[i]);
+      // }
+      // Serial.println();
+
+      StaticJsonDocument<100> doc;
+    
+      DeserializationError error = deserializeMsgPack(doc, (char *) data.msgArray);
+    
+      if (error) {
+        ws.printfAll("Deserialization failed error %s", error.c_str());
+        //Serial.print("Deserialization failed with error: ");
+        //Serial.println(error.c_str());
+      } else { // deserialize successful, we have json
+        const char* fnc = doc["fnc"]; // read function
+        ws.printfAll("Processing command for fuction %s", fnc);
+        if (strcmp("motor", fnc)==0) {
+          // if (fnc == 0x4d) { // M for motor
+          strcpy(motor.cmd, doc["cmd"]); // copy json string value into buffer
+          motor.dat = doc["dat"]; // assign integer value
+
+          xQueueSend(motQueue, &motor, portMAX_DELAY); // put command on motor control queue
+        } 
+      }
+
+      // pretty print to serial console
+      serializeJsonPretty(doc, Serial);
+        
+    }  // end receive queue check
+
+    if (millis() - lastMillis >= 200) { // check transmit queue every 100ms
+      if ( uxQueueMessagesWaiting(wsoutQueue) ) { // message in the queue, dump it to debug console
+        // StaticJsonDocument<200> doc;
+        xQueueReceive(wsoutQueue, &data, portMAX_DELAY); // grab message from queue
+
+        ws.textAll(data.msgArray);
+
+        lastMillis = millis();
+      }
+    } // end transmit queue check
+
+  }
 }
 
 void runStepper(void * parameter) {
-  unsigned long previousMillis = 0;
-  unsigned long currentMillis = millis();
+  bool runTest = false;
+  bool bigmotorDir = false;
+  bool autoLube = false;
+  bool autoStroke = false;
+  bool shootLube = false;
+  bool bigmotorCal = false;
+  bool runCal = false;
+
+  int bigmotorSpeed = BIG_MOTOR_HZ; // default value
+  int bigmotorAccel = BIG_MOTOR_ACCEL; // default value
+  int bigmotorMove = 200;
+  int bigmotorDepth = 0;
+  int lubeAmt = SMALL_MOTOR_HZ;
+
   uint localMove = 0;
   struct MOTcmd command;
-  uint8_t cnt = 0;
-  uint8_t cmd = 0;
-  int dat = 0;
+  struct WSmsg tmpBuffer;
 
-  for (;;) { // loop forever
-    currentMillis = millis();  
+  // loop forever
+  for (;;) { 
+    // currentMillis = millis();  
     
     // check queue for new commands
     if (uxQueueMessagesWaiting(motQueue)) {
       // queue not empty, see if anything in here is for me
       xQueueReceive(motQueue, &command, portMAX_DELAY);
 
-      cmd = command.cmd;
-      dat = command.dat;
+      const char* cmd = command.cmd;
+      int dat = command.dat;
       
-      ws.printfAll("Received command %u data %i", cmd, dat);
+      ws.printfAll("Received command %s data %i", cmd, dat);
 
-      if        (cmd == 0) { // command zero
-        
-      } else if (cmd == 1) { // command one
+      if (strcmp("motortest", cmd) == 0 ) { // command "test"
+        if (dat == 1) { 
+          runTest = true;
+          bigmotorSpeed = BIG_MOTOR_HZ;
+          bigmotorMove = 200;
+        } else {
+          runTest = false;
+        }
       }
 
-      
-
-    }
-    if (currentMillis - previousMillis >= 500) {
-      previousMillis = millis();
+      if (runTest == false) { // motortest disables all other commands
+        if (strcmp("autostroke", cmd) == 0 ) { // command "autostroke"
+          // another command
+        } else if (strcmp("autolube", cmd) == 0 ) { // command "autolube"
+          if (dat == 1) autoLube = true;
+          else autoLube = false;
+        } else if (strcmp("shootlube", cmd) == 0 ) { // command "shootlube" 
+          // another command
+        } else if (strcmp("calibrate", cmd) == 0 ) { // command "calibrate" 
+          // another command
+        } else if (strcmp("strokelen", cmd) == 0 ) { // command "strokelen" 
+          // another command
+        } else if (strcmp("strokedep", cmd) == 0 ) { // command "strokedep" 
+          // another command
+        } else if (strcmp("motspeed", cmd) == 0 ) { // command "motspeed" 
+          // another command
+        } else if (strcmp("motaccel", cmd) == 0 ) { 
+          bigmotorAccel = dat; // update big motor accelleration 
+          // another command
+        } else if (strcmp("lubeamt", cmd) == 0 ) { 
+          lubeAmt = dat; // update number of steps lube motor will run
+        }
+      }
+    } // end message queue check
+    
+    if (runTest) {
       if (!big_motor->isMotorRunning()) { // test to see if motor is done moving
         // Serial.println("Big motor done!");
         // ws.textAll("Big motor done!");
@@ -129,20 +208,11 @@ void runStepper(void * parameter) {
         
         big_motor->move(localMove);
         // Serial.printf("speed %u moving %i\n", bigmotorSpeed, localMove);
-        ws.printfAll("speed %u moving %i", bigmotorSpeed, localMove);
-      } else {
-        // Serial.println("M");
-        // ws.textAll("M");
-      }
+        sprintf(tmpBuffer.msgArray, "{\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i}", lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, localMove);
+        xQueueSend(wsoutQueue, &tmpBuffer, (portTICK_PERIOD_MS * 5)); // pass pointer for the message to the transmit queue
+      } 
+    } // end of runtest
 
-      // if (!small_motor->isMotorRunning()) {
-      //   // Serial.println("Small motor done!");
-      //   Serial.println("Small motor moving 1000 steps.");
-      //   small_motor->move(2000);
-      // } else {
-      //   Serial.println("L");
-      // }
-    }
 
     delay(5);
 
@@ -155,29 +225,29 @@ void runOTA(void * parameter) {
 void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len){
   if(type == WS_EVT_CONNECT){
     //client connected
-    Serial.printf("ws[%s][%u] connect\n", server->url(), client->id());
+    // Serial.printf("ws[%s][%u] connect\n", server->url(), client->id());
     client->printf("Hello Client %u :)", client->id());
     client->ping();
   } else if(type == WS_EVT_DISCONNECT){
-    Serial.printf("ws[%s][%u] disconnect: %u\n", server->url(), client->id());
+    // Serial.printf("ws[%s][%u] disconnect: %u\n", server->url(), client->id());
  
   } else if(type == WS_EVT_ERROR){
     //error was received from the other end
-    Serial.printf("ws[%s][%u] error(%u): %s\n", server->url(), client->id(), *((uint16_t*)arg), (char*)data);
+   //  Serial.printf("ws[%s][%u] error(%u): %s\n", server->url(), client->id(), *((uint16_t*)arg), (char*)data);
   } else if(type == WS_EVT_DATA){
     //data packet
     AwsFrameInfo * info = (AwsFrameInfo*)arg;
     if(info->final && info->index == 0 && info->len == len){
-      //the whole message is in a single frame and we got all of it's data
-      Serial.printf("ws[%s][%u] %s-message[%llu]: ", server->url(), client->id(), (info->opcode == WS_TEXT)?"text":"binary", info->len);
+      // the whole message is in a single frame and we got all of it's data
+      // Serial.printf("ws[%s][%u] %s-message[%llu]: ", server->url(), client->id(), (info->opcode == WS_TEXT)?"text":"binary", info->len);
       if(info->opcode == WS_TEXT){ // dump text message to debug console
         data[len] = 0;
-        Serial.printf("%s\n", (char*)data);
+        // Serial.printf("%s\n", (char*)data);
       } else { // dump binary message to debug console
         for(size_t i=0; i < info->len; i++){
-          Serial.printf("%02x ", data[i]);
+          // Serial.printf("%02x ", data[i]);
         }
-        Serial.printf("\n");
+        // Serial.printf("\n");
       }
       if(info->opcode == WS_TEXT) { // acknowledge text message
         client->text("I got your text message");
@@ -189,49 +259,20 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
             tmpBuffer.msgArray[i] = data[i]; // copy received array into buffer
           }
           tmpBuffer.msgId = client->id(); // grab client id, just for giggles
-          xQueueSend(wsmsgQueue, &tmpBuffer, portMAX_DELAY); // pass pointer for the message to the queue
+          xQueueSend(wsmsgQueue, &tmpBuffer, (portTICK_PERIOD_MS * 5)); // pass pointer for the message to the queue
         }
-      }
-    } else {
-      //message is comprised of multiple frames or the frame is split into multiple packets
-      if(info->index == 0){
-        if(info->num == 0)
-          Serial.printf("ws[%s][%u] %s-message start\n", server->url(), client->id(), (info->message_opcode == WS_TEXT)?"text":"binary");
-        Serial.printf("ws[%s][%u] frame[%u] start[%llu]\n", server->url(), client->id(), info->num, info->len);
-      }
-
-      Serial.printf("ws[%s][%u] frame[%u] %s[%llu - %llu]: ", server->url(), client->id(), info->num, (info->message_opcode == WS_TEXT)?"text":"binary", info->index, info->index + len);
-      if(info->message_opcode == WS_TEXT){
-        data[len] = 0;
-        Serial.printf("%s\n", (char*)data);
-      } else {
-        for(size_t i=0; i < len; i++){
-          Serial.printf("%02x ", data[i]);
-        }
-        Serial.printf("\n");
-      }
-
-      if((info->index + len) == info->len){
-        Serial.printf("ws[%s][%u] frame[%u] end[%llu]\n", server->url(), client->id(), info->num, info->len);
-        if(info->final){
-          Serial.printf("ws[%s][%u] %s-message end\n", server->url(), client->id(), (info->message_opcode == WS_TEXT)?"text":"binary");
-          if(info->message_opcode == WS_TEXT)
-            client->text("I got your text message");
-          else
-            client->binary("I got your binary message");
-        }
-      }
+      } 
     }
   }  
 }
 
 void setup(){
-  Serial.begin(115200);
-  Serial.println("Booting");
+  // Serial.begin(115200);
+  // Serial.println("Booting");
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! Rebooting...");
+    // Serial.println("Connection Failed! Rebooting...");
     delay(5000);
     ESP.restart();
     delay(5000);
@@ -247,6 +288,7 @@ void setup(){
 
       ws.textAll("Shutting down for OTA update");
       vTaskSuspend(taskStepper); // shutdown stepper motion task
+      vTaskSuspend(taskMSG); // suspend message handler task
 
       big_motor->forceStopAndNewPosition(0);
       small_motor->forceStopAndNewPosition(0);
@@ -264,18 +306,18 @@ void setup(){
     }
 
       // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-      Serial.println("OTA Update: " + type);
+      // Serial.println("OTA Update: " + type);
     })
     .onEnd([]() {
-      Serial.println("\nEnd");
+      // Serial.println("\nEnd");
       ESP.restart();
       delay(5000);
     })
     .onProgress([](unsigned int progress, unsigned int total) {
-      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+      // Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
     })
     .onError([](ota_error_t error) {
-      Serial.printf("Error[%u]: ", error);
+      // Serial.printf("Error[%u]: ", error);
       if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
       else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
       else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
@@ -310,71 +352,27 @@ void setup(){
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
 
   server.onNotFound([](AsyncWebServerRequest *request){
-    Serial.printf("NOT_FOUND: ");
-    if(request->method() == HTTP_GET)
-      Serial.printf("GET");
-    else if(request->method() == HTTP_POST)
-      Serial.printf("POST");
-    else if(request->method() == HTTP_DELETE)
-      Serial.printf("DELETE");
-    else if(request->method() == HTTP_PUT)
-      Serial.printf("PUT");
-    else if(request->method() == HTTP_PATCH)
-      Serial.printf("PATCH");
-    else if(request->method() == HTTP_HEAD)
-      Serial.printf("HEAD");
-    else if(request->method() == HTTP_OPTIONS)
-      Serial.printf("OPTIONS");
-    else
-      Serial.printf("UNKNOWN");
-    Serial.printf(" http://%s%s\n", request->host().c_str(), request->url().c_str());
-
-    if(request->contentLength()){
-      Serial.printf("_CONTENT_TYPE: %s\n", request->contentType().c_str());
-      Serial.printf("_CONTENT_LENGTH: %u\n", request->contentLength());
-    }
-
-    int headers = request->headers();
-    int i;
-    for(i=0;i<headers;i++){
-      AsyncWebHeader* h = request->getHeader(i);
-      Serial.printf("_HEADER[%s]: %s\n", h->name().c_str(), h->value().c_str());
-    }
-
-    int params = request->params();
-    for(i=0;i<params;i++){
-      AsyncWebParameter* p = request->getParam(i);
-      if(p->isFile()){
-        Serial.printf("_FILE[%s]: %s, size: %u\n", p->name().c_str(), p->value().c_str(), p->size());
-      } else if(p->isPost()){
-        Serial.printf("_POST[%s]: %s\n", p->name().c_str(), p->value().c_str());
-      } else {
-        Serial.printf("_GET[%s]: %s\n", p->name().c_str(), p->value().c_str());
-      }
-    }
-
-    request->send(404);
+    // handle not found
+    request->send(404, "text/plain", "Not found");
   });
+
   server.onFileUpload([](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final){
-    if(!index)
-      Serial.printf("UploadStart: %s\n", filename.c_str());
-    Serial.printf("%s", (const char*)data);
-    if(final)
-      Serial.printf("UploadEnd: %s (%u)\n", filename.c_str(), index+len);
+   // if(!index)
+      // Serial.printf("UploadStart: %s\n", filename.c_str());
+    // Serial.printf("%s", (const char*)data);
+    // if(final)
+      // Serial.printf("UploadEnd: %s (%u)\n", filename.c_str(), index+len);
   });
+
   server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
-    if(!index)
-      Serial.printf("BodyStart: %u\n", total);
-    Serial.printf("%s", (const char*)data);
-    if(index + len == total)
-      Serial.printf("BodyEnd: %u\n", total);
+    // handle it?
   });
   
   server.begin();
   
-  Serial.println("Ready");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  // Serial.println("Ready");
+  // Serial.print("IP address: ");
+  // Serial.println(WiFi.localIP());
 
   engine.init();
   big_motor = engine.stepperConnectToPin(BIG_MOTOR_STEP);
@@ -403,16 +401,11 @@ void setup(){
   // small_motor->move(1000); // test motor
   // big_motor->move(1000); // test motor
 
-  motQueue = xQueueCreate(5, sizeof(struct MOTcmd) );
-  if (motQueue == NULL) {
-    Serial.println("Error creating motQueue");
-  }
+  motQueue = xQueueCreate(3, sizeof(struct MOTcmd) );
 
-  wsmsgQueue = xQueueCreate(5, sizeof(struct WSmsg) );
-  if (wsmsgQueue == NULL) {
-    Serial.println("Error creating wsmsgQueue");
-  }
+  wsmsgQueue = xQueueCreate(3, sizeof(struct WSmsg));
 
+  wsoutQueue = xQueueCreate(2, sizeof(struct WSmsg));
 
   xTaskCreatePinnedToCore(
     runStepper, /* Function to implement the task */
@@ -423,42 +416,19 @@ void setup(){
     &taskStepper,  /* Task handle. */
     0); /* Core where the task should run */
 
-  //  xTaskCreatePinnedToCore(
-  //    runOTA, /* Function to implement the task */
-  //    "taskOTA", /* Name of the task */
-  //    10000,  /* Stack size in words */
-  //    NULL,  /* Task input parameter */
-  //    0,  /* Priority of the task */
-  //    &taskOTA,  /* Task handle. */
-  //    0); /* Core where the task should run */
+   xTaskCreatePinnedToCore(
+     wsMsgtask, /* Function to implement the task */
+     "taskMSG", /* Name of the task */
+     10000,  /* Stack size in words */
+     NULL,  /* Task input parameter */
+     0,  /* Priority of the task */
+     &taskMSG,  /* Task handle. */
+     1); /* Core where the task should run */
 }
 
 void loop(){
   ArduinoOTA.handle();
   ws.cleanupClients(); // clean up any disconnected ws clients
-  
-  if ( uxQueueMessagesWaiting(wsmsgQueue) ) { // message in the queue, dump it to debug console
-    struct WSmsg data; // buffer for the message data
-    xQueueReceive(wsmsgQueue, &data, portMAX_DELAY); // grab message from queue
-    Serial.printf("Received msg from client %u: ", data.msgId);
-    for (size_t i=0; i < sizeof(data.msgArray) - 1; i++ ) {
-      Serial.printf("%02x ", data.msgArray[i]);
-    }
-    Serial.println();
-
-    StaticJsonDocument<100> testDocument;
-  
-    DeserializationError error = deserializeMsgPack(testDocument, (char *) data.msgArray);
-  
-    if (error) {
-      Serial.print("Deserialization failed with error: ");
-      Serial.println(error.c_str());
-      return;
-    }
-
-    serializeJsonPretty(testDocument, Serial);
-      
-  }
 
   delay(10);
 }

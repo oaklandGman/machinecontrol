@@ -10,6 +10,7 @@ $(document).ready(function() {
 
           try{
               socket = new WebSocket(host); 
+              socket.binaryType = "arraybuffer";
 
               $("#footerText").html("Connecting...");
               message('<ons-list-item class="event">Socket Status: '+socket.readyState);
@@ -19,11 +20,25 @@ $(document).ready(function() {
                $("#footerText").html("Connection Open");
               }
 
-              socket.onmessage = function(msg){
-               var dataMsg = msg.data + '';
-
-               message('<ons-list-item class="message">Recv: '+dataMsg); 
-              
+              socket.onmessage = function(msg) {
+                if (msg.data instanceof ArrayBuffer) {
+                  // binary frame
+                  var myJson = unPack(msg.data);
+                  // const view = new DataView(msg.data);
+                  // console.log("Binary frame ", new Uint8Array(msg.data));
+                  message('<ons-list-item class="message">Binary frame.');
+                } else {
+                  // text frame
+                  var dataMsg = msg.data + '';
+                  if (isJson(dataMsg)) {
+                    var myJson = JSON.parse(dataMsg);
+                    for (key in myJson) {
+                      document.getElementById(key).value = myJson[key];
+                    }
+                  } else {
+                    message('<ons-list-item class="message">Recv: '+dataMsg);
+                  }
+                }
               }
               
 
@@ -39,36 +54,97 @@ $(document).ready(function() {
       }//End connect
 
       $('.numbox').on("change", function(){
-        var myName = $( this ).attr('name');
+        var myId = $( this ).attr('id');
         var myValue = $( this ).val();
-        var myMsg = myName +"="+ myValue;
-        socket.send(myMsg);
-        message('<ons-list-item class="action">Sent: '+myMsg);
+        var myMessage = {};
+        
+        myMessage.fnc = "motor";
+        myMessage.cmd = myId;
+        myMessage.dat = myValue;
+
+        if (!isNaN(myValue)){
+          sendPack(myMessage, socket);
+        }
       });
   
+      $('ons-switch').change(function(){
+        var myId = $( this ).attr('id');
+        var mySwitch = document.getElementById(myId);
+        var myValue = mySwitch.checked;
+        var myMessage ={};
+        
+        // myMessage.n = myName;
+
+        if (myId=="motortest") {
+          myMessage.fnc = "motor";
+          myMessage.cmd = myId;
+          if (myValue) { // checked
+            myMessage.dat = 0x01;
+          } else { // unchecked
+            myMessage.dat = 0x00;
+          }
+        } else if (myId=="autolube") {
+          myMessage.fnc = "motor"; 
+          myMessage.cmd = myId; 
+          if (myValue) { // checked
+            myMessage.dat = 0x01;
+          } else { // unchecked
+            myMessage.dat = 0x00;
+          }
+        } else if (myId=="autostroke") {
+          myMessage.fnc = "motor"; 
+          myMessage.cmd = myId; 
+          if (myValue) { // checked
+            myMessage.dat = 0x01;
+          } else { // unchecked
+            myMessage.dat = 0x00;
+          }
+
+        }
+
+        if (myMessage.dat != null){ // function, command, value
+          sendPack(myMessage, socket);
+        }
+      }); 
+
       $('.button').click(function(){
-        var myName = $( this ).attr('name');
-        var myMessage;
+        var myId = $( this ).attr('id');
+        var myMessage ={};
+        
+        // myMessage.n = myName;
 
-        switch(myName) {
-          case "btnteston":
-            myMessage = {"f":"motor","c":"test","v":1};
-          case "btntestoff":
-            myMessage = {"f":"motor","c":"test","v":0};
-  
-        } // end switch
+        myMessage.fnc = "motor";
+        myMessage.cmd = myId;
+        if        (myId=="calibrate") {
+            myMessage.dat = 0x01;
+        } else if (myId=="shootlube") {
+            myMessage.dat = 0x01;
+        } 
 
-        if (myMessage){ // function, command, value
-          var buffer = msgpack.encode(myMessage);
-          socket.send(buffer);
-          // socket.send(JSON.stringify(myMessage));
-          message('<ons-list-item class="action">Sent message');
+        if (myMessage.dat != null){ // function, command, value
+          sendPack(myMessage, socket);
         }
       });
 });
 
+function sendPack(myMessage, socket) {
+  var buffer = MessagePack.encode(myMessage);
+  socket.send(buffer);
+  // socket.send(JSON.stringify(myMessage));
+  message('<ons-list-item class="action">Sent msgpack: ' + buffer.length + ' bytes.');
+}
+
 function message(msg){
   $('#diagList').prepend(msg+'</ons-list-item>');
   // ons.compile($('#diagList'));
+}
+
+function isJson(str) {
+  try {
+    JSON.parse(str);
+  } catch (e) {
+    return false;
+  }
+  return true;
 }
 
