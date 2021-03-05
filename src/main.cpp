@@ -103,7 +103,7 @@ void wsMsgtask(void * parameter) {
         
     }  // end receive queue check
 
-    if (millis() - lastMillis >= 200) { // check transmit queue every 100ms
+    if (millis() - lastMillis >= 500) { // check transmit queue every 500ms
       if ( uxQueueMessagesWaiting(wsoutQueue) ) { // message in the queue, dump it to debug console
         // StaticJsonDocument<200> doc;
         xQueueReceive(wsoutQueue, &data, portMAX_DELAY); // grab message from queue
@@ -214,12 +214,9 @@ void runStepper(void * parameter) {
     } // end of runtest
 
 
-    delay(5);
+    // delay(5);
 
   } 
-}
-
-void runOTA(void * parameter) {
 }
 
 void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len){
@@ -252,7 +249,7 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
       if(info->opcode == WS_TEXT) { // acknowledge text message
         client->text("I got your text message");
       } else { // acknowledge binary message
-        client->text("I got your binary message"); // send ack to client
+        // client->text("I got your binary message"); // send ack to client
         struct WSmsg tmpBuffer;
         if (sizeof(data) <= sizeof(tmpBuffer.msgArray)) { // array small enough to fit in queue
           for (size_t i=0; i < info->len; i++){
@@ -278,10 +275,6 @@ void setup(){
     delay(5000);
   }
 
-  server.on("/hello", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(200, "text/plain", "Hello World");
-  });
-   
   ArduinoOTA
     .onStart([]() {
       String type;
@@ -343,7 +336,7 @@ void setup(){
 
   server.addHandler(&events);
 
-  server.addHandler(new SPIFFSEditor(SPIFFS, http_username,http_password));
+  server.addHandler(new SPIFFSEditor(SPIFFS, http_username, http_password));
 
   server.on("/heap", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(200, "text/plain", String(ESP.getFreeHeap()));
