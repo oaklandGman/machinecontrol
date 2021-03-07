@@ -100,7 +100,7 @@ void watchSW1(void * parameter) // task to watch limit switch 1 input
     xSemaphoreTake(syncSW1, portMAX_DELAY);
 
     if (millis() - sw1Last > DEBOUNCETIME) {
-      // sw1 triggered
+      // input triggered
       strcpy(motor.cmd, "sw1");
       motor.dat = true;
       xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put info on motor control queue
@@ -121,7 +121,7 @@ void watchSW2(void * parameter) // task to switch limit switch 2 input
     xSemaphoreTake(syncSW2, portMAX_DELAY);
   
     if (millis() - sw2Last > DEBOUNCETIME) {
-      // sw1 triggered
+      // input triggered
       strcpy(motor.cmd, "sw2");
       motor.dat = true;
       xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put info on motor control queue
@@ -135,14 +135,14 @@ void watchESTOP(void * parameter) // task to watch ESTOP input
   volatile uint32_t estopLast = 0; // last triggered time for switch
   struct MOTcmd motor; // buffer for motor control message
 
-  pinMode(EMERGENCY_STOP_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(EMERGENCY_STOP_PIN), handleESTOP, FALLING);
+  pinMode(EMERGENCY_STOP_PIN, INPUT_PULLUP); // digital input, internal pull-up resistors on
+  attachInterrupt(digitalPinToInterrupt(EMERGENCY_STOP_PIN), handleESTOP, FALLING); // setup interrupt on falling edge 
 
   for (;;) { // loop forever
-    xSemaphoreTake(syncESTOP, portMAX_DELAY);
+    xSemaphoreTake(syncESTOP, portMAX_DELAY); // block task until interrupt triggers
   
-    if (millis() - estopLast > DEBOUNCETIME) {
-      // sw1 triggered
+    if (millis() - estopLast > DEBOUNCETIME) { // check elapsed time between interrupts
+      // input triggered, send message to motor control task 
       strcpy(motor.cmd, "estop");
       motor.dat = true;
       xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put info on motor control queue
@@ -646,7 +646,7 @@ void setup(){
   xTaskCreatePinnedToCore(
     runStepper, /* Function to implement the task */
     "taskStepper", /* Name of the task */
-    10000,  /* Stack size in words */
+    5000,  /* Stack size in words */
     NULL,  /* Task input parameter */
     0,  /* Priority of the task */
     &taskStepper,  /* Task handle. */
@@ -655,7 +655,7 @@ void setup(){
    xTaskCreatePinnedToCore(
      wsMsgtask, /* Function to implement the task */
      "taskMSG", /* Name of the task */
-     10000,  /* Stack size in words */
+     5000,  /* Stack size in words */
      NULL,  /* Task input parameter */
      0,  /* Priority of the task */
      &taskMSG,  /* Task handle. */
