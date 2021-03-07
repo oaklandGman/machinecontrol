@@ -19,26 +19,31 @@ const char* http_username = "xxxx";
 const char* http_password = "xxxx";
 #endif
 const char* PARAM_MESSAGE = "Machine Control";
-const char* hostName = "machine";
+const char* hostName = "machine"; // network hostname
+
+const char* fncMotor = "motor"; // string for motor function messages
+const char* fncInfo = "info"; // string for info function messages
+
+const byte DEBOUNCETIME = 10; // debounce time in millis 
 
 // IO pin assignments
-const int BIG_MOTOR_STEP = 19;
-const int BIG_MOTOR_DIR = 21;
-const int BIG_MOTOR_SLEEP = 22;
-const int SMALL_MOTOR_STEP = 25;
-const int SMALL_MOTOR_DIR = 23;
-const int SMALL_MOTOR_SLEEP = 26;
-const int EMERGENCY_STOP_PIN = 35; //define the IO pin the emergency stop switch is connected to
-const int LIMIT_SW1 = 33;
-const int LIMIT_SW2 = 27;
+const byte BIG_MOTOR_STEP     = 19;
+const byte BIG_MOTOR_DIR      = 21;
+const byte BIG_MOTOR_SLEEP    = 22;
+const byte SMALL_MOTOR_STEP   = 25;
+const byte SMALL_MOTOR_DIR    = 23;
+const byte SMALL_MOTOR_SLEEP  = 26;
+const byte EMERGENCY_STOP_PIN = 35;
+const byte LIMIT_SW1          = 33;
+const byte LIMIT_SW2          = 27;
 
 // Speed settings
-const unsigned int BIG_MOTOR_HZ = 9000;
-const unsigned int BIG_MOTOR_ACCEL = 40000;
-const unsigned int SMALL_MOTOR_HZ = 200;
-const unsigned int SMALL_MOTOR_ACCEL = 4294967295;
+const unsigned int MAX_ACCEL         = 4294967295;
+const unsigned int BIG_MOTOR_HZ      = 9000;
+const unsigned int BIG_MOTOR_ACCEL   = 40000;
+const unsigned int SMALL_MOTOR_HZ    = 200;
+const unsigned int SMALL_MOTOR_ACCEL = MAX_ACCEL; // infinite acceleration
 
-unsigned int smallmotorSpeed = SMALL_MOTOR_HZ;
 struct WSmsg // structure for msgpack messages to send/recv over websocket
 {
   uint8_t msgId;
@@ -52,26 +57,107 @@ struct MOTcmd // structure to define commands for stepper motor control
 
 TaskHandle_t taskStepper; // handle for stepper task
 TaskHandle_t taskMSG; // handle for websocket message handling 
+TaskHandle_t taskSW1; // handle for task that watching digital input
+TaskHandle_t taskSW2; // handle for task that watching digital input
+TaskHandle_t taskESTOP; // handle for task watching digital input
 
 QueueHandle_t motQueue; // handle for motor command queue
 QueueHandle_t wsmsgQueue; // handle for websocket message queue
-QueueHandle_t wsoutQueue;
+QueueHandle_t wsoutQueue; // queue for outbound websocket messages
+
+SemaphoreHandle_t syncSW1; // for sw1 isr
+SemaphoreHandle_t syncSW2; // for sw2 isr
+SemaphoreHandle_t syncESTOP; // for estop isr
 
 FastAccelStepperEngine engine = FastAccelStepperEngine();
-FastAccelStepper *big_motor = NULL;
+FastAccelStepper *big_motor   = NULL;
 FastAccelStepper *small_motor = NULL;
+
+void IRAM_ATTR handleSW1() // super simple ISR to debounce switch
+{
+    xSemaphoreGiveFromISR(syncSW1, NULL);
+}
+
+void IRAM_ATTR handleSW2() // super simple ISR to debounce switch
+{
+    xSemaphoreGiveFromISR(syncSW2, NULL);
+}
+
+void IRAM_ATTR handleESTOP() // super simple ISR to debounce switch
+{
+    xSemaphoreGiveFromISR(syncESTOP, NULL);
+}
+
+void watchSW1(void * parameter) {
+  volatile uint32_t sw1Last = 0; // last triggered time for switch
+  struct MOTcmd motor; // buffer for motor related commands
+
+  pinMode(LIMIT_SW1, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(LIMIT_SW1), handleSW1, FALLING);
+
+  for (;;) { // loop forever
+    xSemaphoreTake(syncSW1, portMAX_DELAY);
+
+    if (millis() - sw1Last > DEBOUNCETIME) {
+      // sw1 triggered
+      strcpy(motor.cmd, "sw1");
+      motor.dat = true;
+      xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put command on motor control queue
+      sw1Last = millis();
+    }
+  }
+}
+
+void watchSW2(void * parameter) {
+  volatile uint32_t sw2Last = 0; // last triggered time for switch
+  struct MOTcmd motor; // buffer for motor control message
+
+  pinMode(LIMIT_SW2, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(LIMIT_SW2), handleSW1, FALLING);
+
+  for (;;) { // loop forever
+    xSemaphoreTake(syncSW2, portMAX_DELAY);
+  
+    if (millis() - sw2Last > DEBOUNCETIME) {
+      // sw1 triggered
+      strcpy(motor.cmd, "sw2");
+      motor.dat = true;
+      xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put command on motor control queue
+      sw2Last = millis();
+    }
+  }
+}
+
+void watchESTOP(void * parameter) {
+  volatile uint32_t estopLast = 0; // last triggered time for switch
+  struct MOTcmd motor; // buffer for motor control message
+
+  pinMode(EMERGENCY_STOP_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(EMERGENCY_STOP_PIN), handleESTOP, FALLING);
+
+  for (;;) { // loop forever
+    xSemaphoreTake(syncESTOP, portMAX_DELAY);
+  
+    if (millis() - estopLast > DEBOUNCETIME) {
+      // sw1 triggered
+      strcpy(motor.cmd, "estop");
+      motor.dat = true;
+      xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put command on motor control queue
+      estopLast = millis();
+    }
+  }
+}
 
 void wsMsgtask(void * parameter) {
   struct WSmsg data; // buffer for the message data
   struct MOTcmd motor; // buffer for motor control message
-  struct WSmsg msgout; // buffer for outgoing messages
 
   unsigned long lastMillis = millis();
 
   for (;;) { // infinite loop
     // check receive queue every cycle
     if ( uxQueueMessagesWaiting(wsmsgQueue) ) { // message in the queue, dump it to debug console
-      xQueueReceive(wsmsgQueue, &data, portMAX_DELAY); // grab message from queue
+      xQueueReceive(wsmsgQueue, &data, 5 / portMAX_DELAY); // grab message from queue
       // Serial.printf("Received msg from client %u: ", data.msgId);
       // for (size_t i=0; i < sizeof(data.msgArray) - 1; i++ ) {
       //  Serial.printf("%02x ", data.msgArray[i]);
@@ -88,25 +174,30 @@ void wsMsgtask(void * parameter) {
         //Serial.println(error.c_str());
       } else { // deserialize successful, we have json
         const char* fnc = doc["fnc"]; // read function
-        ws.printfAll("Processing command for fuction %s", fnc);
+        // ws.printfAll("Processing command for fuction %s", fnc);
         if (strcmp("motor", fnc)==0) {
           // if (fnc == 0x4d) { // M for motor
           strcpy(motor.cmd, doc["cmd"]); // copy json string value into buffer
           motor.dat = doc["dat"]; // assign integer value
 
-          xQueueSend(motQueue, &motor, portMAX_DELAY); // put command on motor control queue
-        } 
+          xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put command on motor control queue
+        } else if (strcmp("info", fnc)==0) {
+          uint32_t result = uxTaskGetStackHighWaterMark(NULL);
+          sprintf(data.msgArray, "Message task high water mark %u", result);
+          xQueueSend(wsoutQueue, &data, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+        }
+
       }
 
       // pretty print to serial console
-      serializeJsonPretty(doc, Serial);
+      // serializeJsonPretty(doc, Serial);
         
     }  // end receive queue check
 
     if (millis() - lastMillis >= 500) { // check transmit queue every 500ms
       if ( uxQueueMessagesWaiting(wsoutQueue) ) { // message in the queue, dump it to debug console
         // StaticJsonDocument<200> doc;
-        xQueueReceive(wsoutQueue, &data, portMAX_DELAY); // grab message from queue
+        xQueueReceive(wsoutQueue, &data, 5 / portMAX_DELAY); // grab message from queue
 
         ws.textAll(data.msgArray);
 
@@ -125,32 +216,48 @@ void runStepper(void * parameter) {
   bool shootLube = false;
   bool bigmotorCal = false;
   bool runCal = false;
+  bool runCal2 = false;
+  bool updateClient = false;
+  bool initMotors = false;
+  bool initComplete = false;
+  bool motEnabled = false;
+  bool updateDepth = false;
+  bool updateSpeed = false;
 
-  int bigmotorSpeed = BIG_MOTOR_HZ; // default value
+  int bigmotorSpeed = 400; // default value
   int bigmotorAccel = BIG_MOTOR_ACCEL; // default value
   int bigmotorMove = 200;
   int bigmotorDepth = 0;
-  int lubeAmt = SMALL_MOTOR_HZ;
+  int localMove = 0;
+  int smallmotorSpeed = SMALL_MOTOR_HZ;
+  int lubeAmt = 400;;
+  int sw1Pos = 0;
+  int sw2Pos = 0;
 
-  uint localMove = 0;
+  unsigned int strokeCnt = 0;
+  unsigned int lubeFreq = 10;
+
   struct MOTcmd command;
   struct WSmsg tmpBuffer;
 
   // loop forever
   for (;;) { 
-    // currentMillis = millis();  
-    
-    // check queue for new commands
-    if (uxQueueMessagesWaiting(motQueue)) {
-      // queue not empty, see if anything in here is for me
-      xQueueReceive(motQueue, &command, portMAX_DELAY);
 
-      const char* cmd = command.cmd;
-      int dat = command.dat;
+    if (uxQueueMessagesWaiting(motQueue)) // check queue for new commands
+    {
+      // queue not empty, grab a message and process it
+      xQueueReceive(motQueue, &command, 5 / portMAX_DELAY);
+
+      const char* cmd = command.cmd; // copy command from buffer to a local variable
+      int dat = command.dat; // copy data from buffer to local variable
       
-      ws.printfAll("Received command %s data %i", cmd, dat);
+      ws.printfAll("Received command %s data %i", cmd, dat); // print debug message
 
-      if (strcmp("motortest", cmd) == 0 ) { // command "test"
+      if (strcmp("estop", cmd) == 0 ) { 
+        // handle estop
+      }
+
+      if (strcmp("motortest", cmd) == 0 ) { // positioning test on big motor
         if (dat == 1) { 
           runTest = true;
           bigmotorSpeed = BIG_MOTOR_HZ;
@@ -162,34 +269,91 @@ void runStepper(void * parameter) {
 
       if (runTest == false) { // motortest disables all other commands
         if (strcmp("autostroke", cmd) == 0 ) { // command "autostroke"
-          // another command
+          if (dat == 1) {
+            strokeCnt = 0;
+            autoStroke = true;
+          } else {
+            autoStroke = false;
+          }
         } else if (strcmp("autolube", cmd) == 0 ) { // command "autolube"
           if (dat == 1) autoLube = true;
           else autoLube = false;
         } else if (strcmp("shootlube", cmd) == 0 ) { // command "shootlube" 
-          // another command
+          shootLube = true;
         } else if (strcmp("calibrate", cmd) == 0 ) { // command "calibrate" 
-          // another command
+          runCal = true;
         } else if (strcmp("strokelen", cmd) == 0 ) { // command "strokelen" 
-          // another command
+          bigmotorMove = dat;
         } else if (strcmp("strokedep", cmd) == 0 ) { // command "strokedep" 
-          // another command
+          bigmotorDepth = dat;
+          updateDepth = true;
         } else if (strcmp("motspeed", cmd) == 0 ) { // command "motspeed" 
-          // another command
+          bigmotorSpeed = dat;
+          updateSpeed = true;
         } else if (strcmp("motaccel", cmd) == 0 ) { 
           bigmotorAccel = dat; // update big motor accelleration 
-          // another command
         } else if (strcmp("lubeamt", cmd) == 0 ) { 
           lubeAmt = dat; // update number of steps lube motor will run
+        } else if (strcmp("lubefreq", cmd) == 0 ) {
+          lubeFreq = dat;
+        } else if (strcmp("update", cmd) == 0 ) {
+          updateClient = true;
+        } else if (strcmp("enablemot", cmd) == 0 ) {
+          if (dat == 1) {
+            strcpy(tmpBuffer.msgArray, "Motors enabled.");
+            xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+            digitalWrite(BIG_MOTOR_SLEEP, HIGH); // enable motor driver
+            motEnabled = true;
+          }
+          else {
+            strcpy(tmpBuffer.msgArray, "Motors disabled.");
+            xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+            digitalWrite(BIG_MOTOR_SLEEP, LOW); // disable motor driver
+            motEnabled = false;
+          }
+        } else if (strcmp("sw1", cmd) == 0 ) { // handle limit switch
+          if (runCal) {
+            sw1Pos = big_motor->getCurrentPosition();
+            big_motor->stopMove();
+            sprintf(tmpBuffer.msgArray, "Triggered SW1 at %i", sw1Pos);
+            xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+          }
+        } else if (strcmp("sw2", cmd) == 0 ) { // handle limit switch
+          if (runCal) {
+            sw2Pos = big_motor->getCurrentPosition();
+            big_motor->stopMove();
+            sprintf(tmpBuffer.msgArray, "Triggered SW2 at %i", sw2Pos);
+            xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+          }
         }
       }
     } // end message queue check
     
-    if (runTest) {
-      if (!big_motor->isMotorRunning()) { // test to see if motor is done moving
-        // Serial.println("Big motor done!");
-        // ws.textAll("Big motor done!");
+    if (runCal && motEnabled) // calibrate positioning
+    {
+      if (!runCal2) { // first calibration pass
+        if ((sw1Pos != 0) && (sw2Pos != 0)) {
+          big_motor->setSpeedInHz(60); // creeping speed
+          big_motor->setAcceleration(MAX_ACCEL); // maximum acceleration
+          big_motor->forceStopAndNewPosition(0); // force motor to stop, zero out position
+          big_motor->moveTo(9999); // move in one direction
+        } 
+      }
+    }
 
+    if (initMotors)  // setup motors
+    {
+      initMotors = false;
+      initComplete = true;
+      big_motor->setSpeedInHz(bigmotorSpeed);
+      small_motor->setSpeedInHz(smallmotorSpeed);
+      small_motor->setAutoEnable(true);
+      ws.textAll("Motors initialized.");
+    }
+    
+    if (runTest) // run a self test on the big motor
+    {
+      if (!big_motor->isMotorRunning()) { // test to see if motor is done moving
         big_motor->setSpeedInHz(bigmotorSpeed);
         bigmotorDir = bigmotorDir ^ 1; // flip direction
         if (bigmotorDir) {
@@ -207,14 +371,83 @@ void runStepper(void * parameter) {
         }
         
         big_motor->move(localMove);
-        // Serial.printf("speed %u moving %i\n", bigmotorSpeed, localMove);
-        sprintf(tmpBuffer.msgArray, "{\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i}", lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, localMove);
-        xQueueSend(wsoutQueue, &tmpBuffer, (portTICK_PERIOD_MS * 5)); // pass pointer for the message to the transmit queue
+        sprintf(tmpBuffer.msgArray, "speed %u moving %i", bigmotorSpeed, localMove);
+        xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+        // ws.printfAll("speed %u moving %i", bigmotorSpeed, localMove);
       } 
     } // end of runtest
 
+    if (updateClient) // send some parameters to client on request, crashes ESP if run too often
+    {
+      updateClient = false;
+      sprintf(tmpBuffer.msgArray, "{\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i}", lubeFreq, lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, bigmotorMove);
+      xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+      
+      // debugging, print task stack utilization
+      uint32_t result = uxTaskGetStackHighWaterMark(NULL);
+      sprintf(tmpBuffer.msgArray, "Motor task high water mark %u", result);
+      xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
 
-    // delay(5);
+    }
+
+    if ((updateDepth == true) && (autoStroke != true) && (runTest != true)) // update depth position on big motor
+    {
+      updateDepth = false;
+      big_motor->moveTo(bigmotorDepth);
+      sprintf(tmpBuffer.msgArray, "Moving to depth: %i", bigmotorDepth);
+      xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+      // ws.printfAll("Moving to depth %i", bigmotorDepth);
+    }
+
+    if (updateSpeed) // update RPMs for big motor
+    {
+      updateSpeed = false;
+      big_motor->setSpeedInHz(bigmotorSpeed);
+      sprintf(tmpBuffer.msgArray, "Updated motor speed: %u", bigmotorSpeed);
+      xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+    }
+
+    // if (big_motor->isMotorRunning()) {
+    //   Serial.printf("Motor position %i\n", big_motor->getCurrentPosition());
+    // }
+
+    if (autoStroke) // reciprocate big motor 
+    {
+      if (initComplete && motEnabled) { // check if motors are setup first
+        updateDepth = false;
+        if (big_motor->getCurrentPosition() >= bigmotorMove + bigmotorDepth) {
+          big_motor->moveTo(bigmotorDepth); // return to home position
+          sprintf(tmpBuffer.msgArray, "Stroke %u complete", strokeCnt);
+          xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+          // ws.printfAll("stroke %u complete", strokeCnt);
+        } else if (big_motor->getCurrentPosition() <= bigmotorDepth) {
+          big_motor->moveTo(bigmotorMove + bigmotorDepth); // move to extended position
+          strokeCnt++; // increment stroke counter
+          if ((strokeCnt >= lubeFreq) && (autoLube)) {
+            shootLube = true; // request lube
+            strokeCnt = 0; // reset counter
+          }
+        }
+      } else if (!initComplete && motEnabled) { // setup motors first
+        initMotors = true;
+      }
+    }
+
+    if (shootLube) // dispense lubrication on demand
+    {
+      if (initComplete) { 
+        shootLube = false;
+        if (!small_motor->isRunning()) { // only run motor if it's not running already
+          small_motor->move(lubeAmt); // run motor so many steps
+          sprintf(tmpBuffer.msgArray, "Dispensing lubricant %u", lubeAmt);
+          xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+        }
+      } else {
+        initMotors = true;
+      }
+    }
+
+    delay(5); // probably not needed?
 
   } 
 }
@@ -256,7 +489,7 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
             tmpBuffer.msgArray[i] = data[i]; // copy received array into buffer
           }
           tmpBuffer.msgId = client->id(); // grab client id, just for giggles
-          xQueueSend(wsmsgQueue, &tmpBuffer, (portTICK_PERIOD_MS * 5)); // pass pointer for the message to the queue
+          xQueueSend(wsmsgQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the queue
         }
       } 
     }
@@ -264,8 +497,9 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
 }
 
 void setup(){
-  // Serial.begin(115200);
-  // Serial.println("Booting");
+  Serial.begin(115200);
+  Serial.println("Booting");
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   while (WiFi.waitForConnectResult() != WL_CONNECTED) {
@@ -400,6 +634,10 @@ void setup(){
 
   wsoutQueue = xQueueCreate(2, sizeof(struct WSmsg));
 
+  syncSW1   = xSemaphoreCreateBinary();
+  syncSW2   = xSemaphoreCreateBinary();
+  syncESTOP = xSemaphoreCreateBinary();
+
   xTaskCreatePinnedToCore(
     runStepper, /* Function to implement the task */
     "taskStepper", /* Name of the task */
@@ -416,6 +654,33 @@ void setup(){
      NULL,  /* Task input parameter */
      0,  /* Priority of the task */
      &taskMSG,  /* Task handle. */
+     1); /* Core where the task should run */
+
+    xTaskCreatePinnedToCore(
+     watchSW1, /* Function to implement the task */
+     "taskSW1", /* Name of the task */
+     1000,  /* Stack size in words */
+     NULL,  /* Task input parameter */
+     0,  /* Priority of the task */
+     &taskSW1,  /* Task handle. */
+     1); /* Core where the task should run */
+
+    xTaskCreatePinnedToCore(
+     watchSW2, /* Function to implement the task */
+     "taskSW2", /* Name of the task */
+     1000,  /* Stack size in words */
+     NULL,  /* Task input parameter */
+     0,  /* Priority of the task */
+     &taskSW2,  /* Task handle. */
+     1); /* Core where the task should run */
+
+    xTaskCreatePinnedToCore(
+     watchESTOP, /* Function to implement the task */
+     "taskESTOP", /* Name of the task */
+     1000,  /* Stack size in words */
+     NULL,  /* Task input parameter */
+     0,  /* Priority of the task */
+     &taskESTOP,  /* Task handle. */
      1); /* Core where the task should run */
 }
 

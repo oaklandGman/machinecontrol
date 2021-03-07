@@ -67,7 +67,7 @@ $(document).ready(function() {
         }
       });
   
-      $('ons-switch').change(function(){
+      $('ons-switch').change(function( event ){
         var myId = $( this ).attr('id');
         var mySwitch = document.getElementById(myId);
         var myValue = mySwitch.checked;
@@ -75,7 +75,15 @@ $(document).ready(function() {
         
         // myMessage.n = myName;
 
-        if (myId=="motortest") {
+        if (myId=="enablemot") {
+          myMessage.fnc = "motor";
+          myMessage.cmd = myId;
+          if (myValue) { // checked
+            myMessage.dat = 0x01;
+          } else { // unchecked
+            myMessage.dat = 0x00;
+          }
+        } else if (myId=="motortest") {
           myMessage.fnc = "motor";
           myMessage.cmd = myId;
           if (myValue) { // checked
@@ -105,9 +113,10 @@ $(document).ready(function() {
         if (myMessage.dat != null){ // function, command, value
           sendPack(myMessage, socket);
         }
+        // event.preventDefault();
       }); 
 
-      $('.button').click(function(){
+      $('.button').click(function( event ){
         var myId = $( this ).attr('id');
         var myMessage ={};
         
@@ -119,11 +128,17 @@ $(document).ready(function() {
             myMessage.dat = 0x01;
         } else if (myId=="shootlube") {
             myMessage.dat = 0x01;
-        } 
+        } else if (myId=="update") {
+            myMessage.dat = 0x01;
+        } else if (myId=="info") {
+            myMessage.fnc = "info";
+            myMessage.dat = 0x01;
+        }
 
         if (myMessage.dat != null){ // function, command, value
           sendPack(myMessage, socket);
         }
+        event.preventDefault();
       });
 });
 
@@ -131,7 +146,7 @@ function sendPack(myMessage, socket) {
   var buffer = MessagePack.encode(myMessage);
   socket.send(buffer);
   // socket.send(JSON.stringify(myMessage));
-  message('<ons-list-item class="action">Sent msgpack: ' + buffer.length + ' bytes.');
+  // message('<ons-list-item class="action">Sent msgpack: ' + buffer.length + ' bytes.');
 }
 
 function message(msg){
