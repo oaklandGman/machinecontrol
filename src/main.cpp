@@ -88,7 +88,8 @@ void IRAM_ATTR handleESTOP() // super simple ISR to debounce switch
     xSemaphoreGiveFromISR(syncESTOP, NULL);
 }
 
-void watchSW1(void * parameter) {
+void watchSW1(void * parameter) // task to watch limit switch 1 input
+{
   volatile uint32_t sw1Last = 0; // last triggered time for switch
   struct MOTcmd motor; // buffer for motor related commands
 
@@ -102,13 +103,14 @@ void watchSW1(void * parameter) {
       // sw1 triggered
       strcpy(motor.cmd, "sw1");
       motor.dat = true;
-      xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put command on motor control queue
+      xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put info on motor control queue
       sw1Last = millis();
     }
   }
 }
 
-void watchSW2(void * parameter) {
+void watchSW2(void * parameter) // task to switch limit switch 2 input
+{
   volatile uint32_t sw2Last = 0; // last triggered time for switch
   struct MOTcmd motor; // buffer for motor control message
 
@@ -122,13 +124,14 @@ void watchSW2(void * parameter) {
       // sw1 triggered
       strcpy(motor.cmd, "sw2");
       motor.dat = true;
-      xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put command on motor control queue
+      xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put info on motor control queue
       sw2Last = millis();
     }
   }
 }
 
-void watchESTOP(void * parameter) {
+void watchESTOP(void * parameter) // task to watch ESTOP input
+{
   volatile uint32_t estopLast = 0; // last triggered time for switch
   struct MOTcmd motor; // buffer for motor control message
 
@@ -142,20 +145,21 @@ void watchESTOP(void * parameter) {
       // sw1 triggered
       strcpy(motor.cmd, "estop");
       motor.dat = true;
-      xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put command on motor control queue
+      xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put info on motor control queue
       estopLast = millis();
     }
   }
 }
 
-void wsMsgtask(void * parameter) {
+void wsMsgtask(void * parameter) // task to handle sending and receiving websocket messages
+{
   struct WSmsg data; // buffer for the message data
   struct MOTcmd motor; // buffer for motor control message
 
   unsigned long lastMillis = millis();
 
   for (;;) { // infinite loop
-    // check receive queue every cycle
+    // check receive queue every loop
     if ( uxQueueMessagesWaiting(wsmsgQueue) ) { // message in the queue, dump it to debug console
       xQueueReceive(wsmsgQueue, &data, 5 / portMAX_DELAY); // grab message from queue
       // Serial.printf("Received msg from client %u: ", data.msgId);
@@ -208,7 +212,8 @@ void wsMsgtask(void * parameter) {
   }
 }
 
-void runStepper(void * parameter) {
+void runStepper(void * parameter) // task to handle motor related commands
+{
   bool runTest = false;
   bool bigmotorDir = false;
   bool autoLube = false;
