@@ -228,6 +228,7 @@ void runStepper(void * parameter) // task to handle motor related commands
   bool motEnabled = false;
   bool updateDepth = false;
   bool updateSpeed = false;
+  bool updateStroke = false;
 
   int bigmotorSpeed = 400; // default value
   int bigmotorAccel = BIG_MOTOR_ACCEL; // default value
@@ -287,8 +288,9 @@ void runStepper(void * parameter) // task to handle motor related commands
           shootLube = true;
         } else if (strcmp("calibrate", cmd) == 0 ) { // command "calibrate" 
           runCal = true;
-        } else if (strcmp("strokelen", cmd) == 0 ) { // command "strokelen" 
+        } else if (strcmp("strokelen", cmd) == 0 ) { // command "strokelen"
           bigmotorMove = dat;
+          updateStroke = true;
         } else if (strcmp("strokedep", cmd) == 0 ) { // command "strokedep" 
           bigmotorDepth = dat;
           updateDepth = true;
@@ -432,6 +434,10 @@ void runStepper(void * parameter) // task to handle motor related commands
             shootLube = true; // request lube
             strokeCnt = 0; // reset counter
           }
+        } else if (updateStroke) { // update to new longer stroke length
+          big_motor->moveTo(bigmotorMove + bigmotorDepth); // move to extended position
+          strokeCnt++; // increment stroke counter
+          updateStroke = false;
         }
       } else if (!initComplete && motEnabled) { // setup motors first
         initMotors = true;

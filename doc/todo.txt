@@ -1,0 +1,12 @@
+little things:
+1. test limit switches
+2. finish auto calibrate
+3. update newly connected websocket client with running parameters
+4. save / load config file to flash
+5. get tabs working on client (status, configure, edit program)
+
+big things:
+1. figure out scripting method for programming (json?)
+2. get micro-sd interface working
+3. save / load config file to sd card
+4. drop-down function selection (manual, auto, run program)
