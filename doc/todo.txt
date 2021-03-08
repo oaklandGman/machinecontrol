@@ -2,11 +2,18 @@ little things:
 1. test limit switches
 2. finish auto calibrate
 3. update newly connected websocket client with running parameters
+    a. configurtion updates
+    b. switch states updates
+    c. maybe push updates on change?
+    d. maybe include limit switch states?
 4. save / load config file to flash
 5. get tabs working on client (status, configure, edit program)
+    a. tab template events working
+    b. tab icons not working - material design?
 
 big things:
 1. figure out scripting method for programming (json?)
 2. get micro-sd interface working
 3. save / load config file to sd card
 4. drop-down function selection (manual, auto, run program)
+5. move all hosted files over to sd card

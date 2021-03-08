@@ -1,74 +1,80 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <link rel="stylesheet" href="https://unpkg.com/onsenui/css/onsenui.css">
-        <link rel="stylesheet" href="https://unpkg.com/onsenui/css/onsen-css-components.min.css">
-        <script src="https://unpkg.com/onsenui/js/onsenui.min.js"></script>
-        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-        <script crossorigin src="https://unpkg.com/@msgpack/msgpack"></script>
-        <script src="/js/myscript.js"></script>
-        <title>Machine Control</title>
-    </head>
+  <head>
+    <link rel="stylesheet" href="https://unpkg.com/onsenui/css/onsenui-core.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/onsenui/css/onsen-css-components.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <!--<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@5.9.55/css/materialdesignicons.min.css">-->
 
-    <ons-page id="main">
-        <ons-toolbar>
-            <div class="center" id="headerText">Machine Control</div>
-        </ons-toolbar>
-        <div style="text-align: center;">
-            <ons-list>
-                <ons-list-item>
-                    <div class="center">
-                        Enable motor test
-                      </div>
-                      <div class="right">
-                        <ons-switch id="motortest"></ons-switch>
-                      </div>
-                </ons-list-item>
-                <ons-list-item>
-                    <div class="center">
-                        Enable big motor
-                      </div>
-                      <div class="right">
-                        <ons-switch id="enablemot"></ons-switch>
-                      </div>
-                </ons-list-item>                <ons-list-item>
-                    <div class="center">
-                        Enable auto stroke
-                      </div>
-                      <div class="right">
-                        <ons-switch id="autostroke"></ons-switch>
-                      </div>
-                </ons-list-item>
-                <ons-list-item>
-                    <div class="center">
-                        Enable auto lube
-                      </div>
-                      <div class="right">
-                        <ons-switch id="autolube"></ons-switch>
-                      </div>
-                </ons-list-item>
-            </ons-list>
-            <ons-button id="calibrate" class="button" modifier="large">Calibrate Piston</ons-button>
-            <ons-button id="shootlube" class="button" modifier="large">Shoot Lube</ons-button>
-            <ons-button id="update" class="button" modifier="large">Update Client</ons-button>
-            <ons-button id="info" class="button" modifier="large">Message Task Info</ons-button>
-        
-            <p><ons-input style="width: 80%;" id="strokelen" placeholder="Stroke Length" modifier="material underbar" class="numbox" type="number" min="0" max="800" float></ons-input></p>
-            <p><ons-input style="width: 80%;" id="strokedep" placeholder="Stroke Depth" modifier="material underbar" class="numbox" type="number" min="-800" max="800" float></ons-input></p>
-            <p><ons-input style="width: 80%;" id="motspeed" placeholder="Speed" modifier="material underbar" class="numbox" type="number" min="0" max="4000" float></ons-input></p>
-            <p><ons-input style="width: 80%;" id="motaccel" placeholder="Acceleration" modifier="material underbar" class="numbox" type="number" min="0" max="40000" float></ons-input></p>
-            <p><ons-input style="width: 80%;" id="lubeamt" placeholder="Lube Amount" modifier="material underbar" class="numbox" type="number" min="0" max="1200" float></ons-input></p>
-            <p><ons-input style="width: 80%;" id="lubefreq" placeholder="Lube Frequency" modifier="material underbar" class="numbox" type="number" min="0" max="1000" float></ons-input></p>
+    <script src="https://unpkg.com/onsenui/js/onsenui.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script crossorigin src="https://unpkg.com/@msgpack/msgpack"></script>
+    <script src="/js/myscript.js"></script>
+    <title>Machine Control</title>
+  </head>
 
-        </div>
+  <ons-page id="main">
+    <ons-tabbar swipeable position="auto">
+      <ons-tab page="debugtab.html" label="Debug" icon="md-swap-vertical" active-icon="md-swap-vertical" active></ons-tab>
+      <ons-tab page="configtab.html" label="Config" icon="md-settings" active-icon="md-settings"></ons-tab>
+      <ons-tab page="autotab.html" label="Automation" icon="md-psychology-outline" active-icon="md-psychology"></ons-tab>
+    </ons-tabbar>
 
-        <ons-list-title>Diagnostic Log</ons-list-title>
-        <ons-scroller style="height: 200px">
-            <ons-list id="diagList"></ons-list>
-        </ons-scroller>
+    <ons-bottom-toolbar>
+      <div style="text-align: center;">
+        <p id="footerText" style="font-variant: small-caps;">Welcome</p>
+      </div>
+    </ons-bottom-toolbar>
+  </ons-page>
 
-        <ons-bottom-toolbar>
-            <div style="text-align: center;" id="footerText">Not Connected</div>
-        </ons-bottom-toolbar>
+  <template id="autotab.html">
+    <ons-page id="automation">
+      <div style="text-align: center;">
+        <ons-list-title>Automation Options</ons-list-title>
+        <ons-list>
+          <ons-list-item>
+            <div class="center">Enable motor test </div>
+            <div class="right"><ons-switch id="runtest"></ons-switch></div>
+          </ons-list-item>
+          <ons-list-item>
+            <div class="center">Enable big motor</div>
+            <div class="right"><ons-switch id="motenabled"></ons-switch></div>
+          </ons-list-item>                
+          <ons-list-item>
+            <div class="center">Enable auto stroke</div>
+            <div class="right"><ons-switch id="autostroke"></ons-switch></div>
+          </ons-list-item>
+          <ons-list-item>
+            <div class="center">Enable auto lube</div>
+            <div class="right"><ons-switch id="autolube"></ons-switch></div>
+          </ons-list-item>
+        </ons-list>
+        <ons-button id="calibrate" class="button" modifier="large">Calibrate Piston</ons-button>
+        <ons-button id="shootlube" class="button" modifier="large">Shoot Lube</ons-button>
+        <ons-button id="update" class="button" modifier="large">Update Client</ons-button>
+        <ons-button id="info" class="button" modifier="large">Message Task Info</ons-button>
+      </div>
     </ons-page>
+  </template>
+        
+  <template id="configtab.html">
+    <ons-page id="config">
+      <div style="text-align: center;">
+        <ons-list-title>Machine Configuration</ons-list-title>
+        <p><ons-input style="width: 80%;" id="strokelen" placeholder="Stroke Length" modifier="material underbar" class="numbox" type="number" min="0" max="800" float></ons-input></p>
+        <p><ons-input style="width: 80%;" id="strokedep" placeholder="Stroke Depth" modifier="material underbar" class="numbox" type="number" min="-800" max="800" float></ons-input></p>
+        <p><ons-input style="width: 80%;" id="motspeed" placeholder="Speed" modifier="material underbar" class="numbox" type="number" min="0" max="4000" float></ons-input></p>
+        <p><ons-input style="width: 80%;" id="motaccel" placeholder="Acceleration" modifier="material underbar" class="numbox" type="number" min="0" max="40000" float></ons-input></p>
+        <p><ons-input style="width: 80%;" id="lubeamt" placeholder="Lube Amount" modifier="material underbar" class="numbox" type="number" min="0" max="1200" float></ons-input></p>
+        <p><ons-input style="width: 80%;" id="lubefreq" placeholder="Lube Frequency" modifier="material underbar" class="numbox" type="number" min="0" max="1000" float></ons-input></p>
+      </div>
+    </ons-page>
+  </template>
+
+  <template id="debugtab.html">
+    <ons-page id="debug">
+      <ons-list-title>Diagnostic Log</ons-list-title>
+      <ons-list id="diagList"></ons-list>
+    </ons-page>
+  </template>
 </html>

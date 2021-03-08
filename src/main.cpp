@@ -263,7 +263,7 @@ void runStepper(void * parameter) // task to handle motor related commands
         // handle estop
       }
 
-      if (strcmp("motortest", cmd) == 0 ) { // positioning test on big motor
+      if (strcmp("runtest", cmd) == 0 ) { // positioning test on big motor
         if (dat == 1) { 
           runTest = true;
           bigmotorSpeed = BIG_MOTOR_HZ;
@@ -305,7 +305,7 @@ void runStepper(void * parameter) // task to handle motor related commands
           lubeFreq = dat;
         } else if (strcmp("update", cmd) == 0 ) {
           updateClient = true;
-        } else if (strcmp("enablemot", cmd) == 0 ) {
+        } else if (strcmp("motenabled", cmd) == 0 ) {
           if (dat == 1) {
             strcpy(tmpBuffer.msgArray, "Motors enabled.");
             xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
@@ -387,13 +387,20 @@ void runStepper(void * parameter) // task to handle motor related commands
     if (updateClient) // send some parameters to client on request, crashes ESP if run too often
     {
       updateClient = false;
-      sprintf(tmpBuffer.msgArray, "{\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i}", lubeFreq, lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, bigmotorMove);
+
+      const char* mySwitches = "{\"switches\":{\"runtest\":%i,\"motenabled\":%i,\"autostroke\":%i,\"autolube\":%i}}";
+      const char* myConfig = "{\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i}";
+
+      sprintf(tmpBuffer.msgArray, myConfig, lubeFreq, lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, bigmotorMove);
       xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
       
-      // debugging, print task stack utilization
-      uint32_t result = uxTaskGetStackHighWaterMark(NULL);
-      sprintf(tmpBuffer.msgArray, "Motor task high water mark %u", result);
+      sprintf(tmpBuffer.msgArray, mySwitches, runTest, motEnabled, autoStroke, autoLube);
       xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+
+      // debugging, print task stack utilization
+      // uint32_t result = uxTaskGetStackHighWaterMark(NULL);
+      // sprintf(tmpBuffer.msgArray, "Motor task high water mark %u", result);
+      // xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
 
     }
 
@@ -695,9 +702,10 @@ void setup(){
      1); /* Core where the task should run */
 }
 
-void loop(){
+void loop() // main task loop, used for housekeeping and ota
+{
   ArduinoOTA.handle();
-  ws.cleanupClients(); // clean up any disconnected ws clients
+  ws.cleanupClients(); // clean up any disconnected clients
 
   delay(10);
 }
