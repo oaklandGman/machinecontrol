@@ -2,11 +2,12 @@ little things:
 1. test limit switches
 2. finish auto calibrate
 3. update newly connected websocket client with running parameters
-    a. configurtion updates
-    b. switch states updates
+    a. configurtion updates done
+    b. switch states updates done
     c. maybe push updates on change?
     d. maybe include limit switch states?
 4. save / load config file to flash
+    a. done
 5. get tabs working on client (status, configure, edit program)
     a. tab template events working
     b. tab icons not working - material design?

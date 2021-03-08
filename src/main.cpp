@@ -55,6 +55,15 @@ struct MOTcmd // structure to define commands for stepper motor control
   int dat; // four bytes of data
 };
 
+struct MotorConfig // motor configuration parameters to store
+{
+  int bigmotorSpeed; // speed setting for big motor
+  int bigmotorAccel; // accelleration for big motor
+  int smallmotorSpeed; // speed setting for small motor
+  int lubeAmt; // amount dispensed per request
+  int lubeFreq; // frequnecy of dispensing
+};
+
 TaskHandle_t taskStepper; // handle for stepper task
 TaskHandle_t taskMSG; // handle for websocket message handling 
 TaskHandle_t taskSW1; // handle for task that watching digital input
@@ -214,37 +223,40 @@ void wsMsgtask(void * parameter) // task to handle sending and receiving websock
 
 void runStepper(void * parameter) // task to handle motor related commands
 {
-  bool runTest = false;
-  bool bigmotorDir = false;
-  bool autoLube = false;
-  bool autoStroke = false;
-  bool shootLube = false;
-  bool bigmotorCal = false;
-  bool runCal = false;
-  bool runCal2 = false;
-  bool updateClient = false;
-  bool initMotors = false;
-  bool initComplete = false;
-  bool motEnabled = false;
-  bool updateDepth = false;
-  bool updateSpeed = false;
-  bool updateStroke = false;
+  bool runTest = false; // flag for motor self test routine
+  bool bigmotorDir = false; // flag used for motor direction reversal in self test
+  bool autoLube = false; // automatically dispense lubrication
+  bool autoStroke = false; // automatically cycle motor
+  bool shootLube = false; // flag to dispense lubrication
+  bool bigmotorCal = false; // flag that automatica calibration is complete
+  bool runCal = false; // automatic calibration phase 1
+  bool runCal2 = false; // automatic calibration phase 2
+  bool updateClient = false; // flag to send parameters to ws clients
+  bool initMotors = false; // flag to set stepper engine with config parameters
+  bool initComplete = false; // flag indicating motors configured
+  bool motEnabled = false; // flag indicating big motor is enabled
+  bool updateDepth = false; // flag to update stroke depth number
+  bool updateSpeed = false; // flag to update big motor speed
+  bool updateStroke = false; // flag to upload big motor stroke length
+  bool configLoaded = false; // flag indicating config loaded
 
-  int bigmotorSpeed = 400; // default value
-  int bigmotorAccel = BIG_MOTOR_ACCEL; // default value
-  int bigmotorMove = 200;
-  int bigmotorDepth = 0;
-  int localMove = 0;
-  int smallmotorSpeed = SMALL_MOTOR_HZ;
-  int lubeAmt = 400;;
-  int sw1Pos = 0;
-  int sw2Pos = 0;
+  int bigmotorSpeed = 400; // speed of big motor
+  int bigmotorAccel = BIG_MOTOR_ACCEL; // accelleration of big motor
+  int bigmotorMove = 200; // stroke length
+  int bigmotorDepth = 0; // stroke depth (offset from 0)
+  int localMove = 0; // used in selftest routine
+  int smallmotorSpeed = SMALL_MOTOR_HZ; // speed of small motor
+  int lubeAmt = 400; // amount of lube dispensed per request
+  int sw1Pos = 0; // step count for limit switch 1
+  int sw2Pos = 0; // step count for limit switch 2
 
-  unsigned int strokeCnt = 0;
-  unsigned int lubeFreq = 10;
+  unsigned int strokeCnt = 0; // number of strokes since last lube
+  unsigned int lubeFreq = 10; // number of strokes between lube
 
-  struct MOTcmd command;
-  struct WSmsg tmpBuffer;
+  const char* configFile = "config.json";
+
+  struct MOTcmd command; // buffer for incoming commands
+  struct WSmsg tmpBuffer; // buffer for outgoing ws messages
 
   // loop forever
   for (;;) { 
@@ -261,6 +273,63 @@ void runStepper(void * parameter) // task to handle motor related commands
 
       if (strcmp("estop", cmd) == 0 ) { 
         // handle estop
+      }
+
+      if (strcmp("saveconfig", cmd) == 0 ) // save motor parameters to json config file
+      { 
+        File file = SPIFFS.open("/config.json", "w"); // open file on SPIFFS
+        if (!file) {
+          ws.textAll("Failed to open config.json for writing."); // failed to open, abort
+        } else {
+          // successfully opened, proceed
+          StaticJsonDocument<150> config;
+
+          config["motspeed"]  = bigmotorSpeed;
+          config["motaccel"]  = bigmotorAccel;
+          config["lubeamt"]   = lubeAmt;
+          config["lubefreq"]  = lubeFreq;
+          config["lubespeed"] = smallmotorSpeed;
+
+          if (serializeJsonPretty(config, file) == 0) { // write contents to file
+            ws.textAll("Failed to write to config.json");
+          } else {
+              ws.textAll("Config file updated.");
+          }
+
+          file.close(); // close file handle
+        }
+      }
+
+      if (strcmp("loadconfig", cmd) == 0 ) // load motor parameters from json config file
+      { 
+        File file = SPIFFS.open("/config.json", "r"); // open file on SPIFFS
+      
+        if (!file) {
+          ws.textAll("Failed to open config.json for reading."); // failed to open, abort
+        } else {
+          // successfully opened, proceed
+          StaticJsonDocument<150> config;
+
+          // Deserialize the JSON document
+          DeserializationError error = deserializeJson(config, file);
+          if (error) {
+            ws.textAll("Error reading config file.");
+          } else {
+            bigmotorSpeed   = config["motspeed"]  | BIG_MOTOR_HZ;
+            bigmotorAccel   = config["motaccel"]  | BIG_MOTOR_ACCEL;
+            lubeAmt         = config["lubeamt"]   | 200;
+            lubeFreq        = config["lubefreq"]  | 10;
+            smallmotorSpeed = config["lubespeed"] | SMALL_MOTOR_HZ;
+
+            initMotors = true; // activate some of the parameter changes
+            configLoaded = true; // set flag that we've loaded config successfuy
+
+            ws.textAll("Config file loaded");
+
+          }
+
+          file.close(); // close file handle
+        }
       }
 
       if (strcmp("runtest", cmd) == 0 ) { // positioning test on big motor
@@ -352,9 +421,10 @@ void runStepper(void * parameter) // task to handle motor related commands
     {
       initMotors = false;
       initComplete = true;
-      big_motor->setSpeedInHz(bigmotorSpeed);
-      small_motor->setSpeedInHz(smallmotorSpeed);
-      small_motor->setAutoEnable(true);
+      big_motor->setSpeedInHz(bigmotorSpeed); // setup inital speed
+      big_motor->setAcceleration(bigmotorAccel); // setup default acceleration
+      small_motor->setSpeedInHz(smallmotorSpeed); // setup lube pump speed
+      small_motor->setAutoEnable(true); // auto enable lube pump driver
       ws.textAll("Motors initialized.");
     }
     

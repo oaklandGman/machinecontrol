@@ -34,11 +34,11 @@ ons.ready(function() {
               var myJson = unPack(msg.data);
               // const view = new DataView(msg.data);
               // console.log("Binary frame ", new Uint8Array(msg.data));
-              message('<ons-list-item class="message">Binary frame.');
+              message('<ons-list-item class="message">Binary frame?');
             } else {
               // text frame
               var dataMsg = msg.data + '';
-              console.log(dataMsg);
+              // console.log(dataMsg);
               if (isJson(dataMsg)) {
                 var myJson = JSON.parse(dataMsg);
                 for (key in myJson) {
@@ -84,13 +84,8 @@ ons.ready(function() {
   
       myMessage.fnc = "motor";
       myMessage.cmd = myId;
-      if        (myId=="calibrate") {
-          myMessage.dat = 0x01;
-      } else if (myId=="shootlube") {
-          myMessage.dat = 0x01;
-      } else if (myId=="update") {
-          myMessage.dat = 0x01;
-      } else if (myId=="info") {
+      myMessage.dat = 0x01;
+      if (myId=="info") {
           myMessage.fnc = "info";
           myMessage.dat = 0x01;
       }
