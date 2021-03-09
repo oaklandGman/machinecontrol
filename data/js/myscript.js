@@ -3,6 +3,11 @@ ons.ready(function() {
   var socket;
   /*The user has WebSockets!!! */
 
+  document.addEventListener('prechange', function(event) {
+    document.querySelector('ons-toolbar .center')
+      .innerHTML = event.tabItem.getAttribute('label');
+  });
+
   connect();
 
   function connect(){
@@ -72,7 +77,7 @@ ons.ready(function() {
       }
   }//End connect
 
-  
+
   var myTabbar = document.querySelector("ons-tabbar");
   myTabbar.addEventListener("postchange", function(e){
     // alert("tab " + e.index);

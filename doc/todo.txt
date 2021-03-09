@@ -10,7 +10,7 @@ little things:
     a. done
 5. get tabs working on client (status, configure, edit program)
     a. tab template events working
-    b. tab icons not working - material design?
+    b. icons working now http://zavoloklom.github.io/material-design-iconic-font/cheatsheet.html
 
 big things:
 1. figure out scripting method for programming (json?)
