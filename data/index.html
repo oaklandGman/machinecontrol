@@ -19,7 +19,7 @@
       <ons-tab page="debugtab.html" label="Debug Log" icon="md-swap-vertical" active></ons-tab>
       <ons-tab page="configtab.html" label="Configuration" icon="md-settings"></ons-tab>
       <ons-tab page="autotab.html" label="Automation" icon="md-run"></ons-tab>
-      <ons-tab page="program.html" label="Programming" icon="md-format-list-bulleted"></ons-tab>
+      <ons-tab page="program.html" label="Program" icon="md-format-list-bulleted"></ons-tab>
     </ons-tabbar>
 
     <ons-bottom-toolbar>
@@ -56,8 +56,6 @@
           <ons-button id="shootlube" class="button" modifier="large">Shoot Lube</ons-button>
           <p></p>
           <ons-button id="update" class="button" modifier="large">Update Client</ons-button>
-          <p></p>
-          <ons-button id="info" class="button" modifier="large">Message Task Info</ons-button>
         </section>
       </div>
     </ons-page>
@@ -83,7 +81,14 @@
 
   <template id="debugtab.html">
     <ons-page id="debug">
-      <ons-list id="diagList"></ons-list>
+      <section style="padding: 8px;">
+        <ons-button id="debugmot" class="button" modifier="large">Debug Motor Info</ons-button>
+        <p></p>
+        <ons-button id="info" class="button" modifier="large">Message Task Info</ons-button>
+      </section>
+      <section style="padding: 8px;">
+        <ons-list id="diagList"></ons-list>
+      </section>
     </ons-page>
   </template>
 

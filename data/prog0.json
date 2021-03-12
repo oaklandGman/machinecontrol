@@ -76,7 +76,7 @@
     },
     "6":{
         "fnc":"delay",
-        "reps":50,
+        "reps":1,
         "desc":"wait for it",
         "delay":30000
     },

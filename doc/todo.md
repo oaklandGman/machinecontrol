@@ -1,4 +1,7 @@
+# my todo list
+
 little things:
+
 1. test limit switches
 2. finish auto calibrate
 3. update newly connected websocket client with running parameters
@@ -10,10 +13,13 @@ little things:
     a. done
 5. get tabs working on client (status, configure, edit program)
     a. tab template events working
-    b. icons working now http://zavoloklom.github.io/material-design-iconic-font/cheatsheet.html
+    b. icons working now use <http://zavoloklom.github.io/material-design-iconic-font/cheatsheet.html>
 
 big things:
+
 1. figure out scripting method for programming (json?)
+    a. json scripting working, no easy client side editor yet
+    b. only very basic feature set implemented
 2. get micro-sd interface working
 3. save / load config file to sd card
 4. drop-down function selection (manual, auto, run program)

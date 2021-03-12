@@ -1,3 +1,5 @@
+# ideas to maybe implement
+
 1. auto increase speed
     a. starting speed
     b. max speed
