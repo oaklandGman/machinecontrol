@@ -60,7 +60,12 @@ ons.ready(function() {
                   }
                 }
               } else {
-                message('<ons-list-item class="message">Recv: '+dataMsg);
+                var myKey = dataMsg.substring(0,4);
+                if(myKey=="Exec" || myKey=="Prog") { // received program exec message
+                  progInfo('<ons-list-item class="program">'+dataMsg);
+                } else { // other message
+                  message('<ons-list-item class="message">Recv: '+dataMsg);
+                }
               }
             }
           }
@@ -81,6 +86,7 @@ ons.ready(function() {
   var myTabbar = document.querySelector("ons-tabbar");
   myTabbar.addEventListener("postchange", function(e){
     // alert("tab " + e.index);
+
     $('.button').unbind().click(function( event ){ // listen for button click
       var myId = $( this ).attr('id'); 
       var myMessage ={};
@@ -91,9 +97,18 @@ ons.ready(function() {
       myMessage.cmd = myId;
       myMessage.dat = 0x01;
       if (myId=="info") {
-          myMessage.fnc = "info";
+        myMessage.fnc = "info";
+        myMessage.dat = 0x01;
+      } else if (myId=="loadprog") {
+        var myFilename = document.getElementById("progname").value;
+        if (myFilename.length > 1 && myFilename.substring(0,1)=="/") {
+          myMessage.txt = myFilename; // assign filename
           myMessage.dat = 0x01;
-      }
+        } else {
+          alert("Problem with file name, maybe missing leading /");
+          return;
+        }
+      } 
   
       if (myMessage.dat != null){ // function, command, value
         sendPack(myMessage, socket);
@@ -180,6 +195,10 @@ function sendPack(myMessage, socket) {
 function message(msg){
   $('#diagList').prepend(msg+'</ons-list-item>');
   // ons.compile($('#diagList'));
+}
+
+function progInfo(msg){
+  $('#proginfo').prepend(msg+'</ons-list-item>');
 }
 
 function isJson(str) {

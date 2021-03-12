@@ -52,6 +52,7 @@ struct WSmsg // structure for msgpack messages to send/recv over websocket
 struct MOTcmd // structure to define commands for stepper motor control
 {
   char cmd[16]; // command string
+  char txt[32]; // text string, for filename, etc
   int dat; // four bytes of data
 };
 
@@ -191,7 +192,9 @@ void wsMsgtask(void * parameter) // task to handle sending and receiving websock
         if (strcmp("motor", fnc)==0) {
           // if (fnc == 0x4d) { // M for motor
           strcpy(motor.cmd, doc["cmd"]); // copy json string value into buffer
-          motor.dat = doc["dat"]; // assign integer value
+          const char* txt = doc["txt"]; // attempt to read key which may not be set
+          if (txt) strcpy(motor.txt, txt); // copy text string to buffer if it is set
+          motor.dat = doc["dat"]; // assign integer value to buffer
 
           xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put command on motor control queue
         } else if (strcmp("info", fnc)==0) {
@@ -199,7 +202,6 @@ void wsMsgtask(void * parameter) // task to handle sending and receiving websock
           sprintf(data.msgArray, "Message task high water mark %u", result);
           xQueueSend(wsoutQueue, &data, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
         }
-
       }
 
       // pretty print to serial console
@@ -223,6 +225,8 @@ void wsMsgtask(void * parameter) // task to handle sending and receiving websock
 
 void runStepper(void * parameter) // task to handle motor related commands
 {
+  DynamicJsonDocument program(3072); // setup memory for big json program data
+
   bool runTest = false; // flag for motor self test routine
   bool bigmotorDir = false; // flag used for motor direction reversal in self test
   bool autoLube = false; // automatically dispense lubrication
@@ -231,6 +235,7 @@ void runStepper(void * parameter) // task to handle motor related commands
   bool bigmotorCal = false; // flag that automatica calibration is complete
   bool runCal = false; // automatic calibration phase 1
   bool runCal2 = false; // automatic calibration phase 2
+  bool doDelay = false; // flag to trigger delay without motor motion
   bool updateClient = false; // flag to send parameters to ws clients
   bool initMotors = false; // flag to set stepper engine with config parameters
   bool initComplete = false; // flag indicating motors configured
@@ -239,6 +244,12 @@ void runStepper(void * parameter) // task to handle motor related commands
   bool updateSpeed = false; // flag to update big motor speed
   bool updateStroke = false; // flag to upload big motor stroke length
   bool configLoaded = false; // flag indicating config loaded
+  bool progLoaded = false; // flag indicating program has been loaded
+  bool progRunning = false; // flag indicating program is running
+  bool progNextStep = false; // flag indicating program ready for next step
+
+  unsigned long previousMillis = 0; // last time on the clock
+  unsigned long currentMillis = millis();
 
   int bigmotorSpeed = 400; // speed of big motor
   int bigmotorAccel = BIG_MOTOR_ACCEL; // accelleration of big motor
@@ -249,19 +260,25 @@ void runStepper(void * parameter) // task to handle motor related commands
   int lubeAmt = 400; // amount of lube dispensed per request
   int sw1Pos = 0; // step count for limit switch 1
   int sw2Pos = 0; // step count for limit switch 2
+  int delayMillis = 0; // milliseconds for delay
 
-  unsigned int strokeCnt = 0; // number of strokes since last lube
-  unsigned int lubeFreq = 10; // number of strokes between lube
+  uint8_t strokeCnt   = 0; // number of strokes since last lube
+  uint8_t lubeFreq    = 10; // number of strokes between lube
+  uint8_t progPointer = 0; // where are we at in the program
+  uint8_t progReps    = 0; // number of reps for current program command
+  uint8_t progRepCnt  = 0; // counter for number of reps completed
+  uint8_t progSteps   = 0; // number of steps in program
 
-  const char* configFile = "config.json";
+  const char* configFile = "/config.json";
 
   struct MOTcmd command; // buffer for incoming commands
   struct WSmsg tmpBuffer; // buffer for outgoing ws messages
 
   // loop forever
   for (;;) { 
+    currentMillis = millis(); // update current count on clock
 
-    if (uxQueueMessagesWaiting(motQueue)) // check queue for new commands
+    if (uxQueueMessagesWaiting(motQueue)) // check queue for new WS commands
     {
       // queue not empty, grab a message and process it
       xQueueReceive(motQueue, &command, 5 / portMAX_DELAY);
@@ -275,9 +292,54 @@ void runStepper(void * parameter) // task to handle motor related commands
         // handle estop
       }
 
+      if (strcmp("loadprog", cmd) == 0 ) // open json program command file
+      {
+        const char* filename = command.txt; // copy filename from buffer to local variable
+        if (strlen(filename)>0) { // make sure we have a filename
+          File progFile = SPIFFS.open(filename, "r"); // open file on SPIFFS
+        
+          if (!progFile) {
+            ws.printfAll("Failed to open %s for reading.", filename); // failed to open, abort
+          } else { // successfully opened, proceed
+            // Deserialize the JSON document
+            DeserializationError error = deserializeJson(program, progFile);
+            if (error) {
+              ws.textAll("Unable to deserialize JSON.");
+            } else {
+              progLoaded = true; // set flag
+              progRunning = false; // clear flag
+              initMotors = true; // set flag, get things ready
+              const char* progName = program["program"]["name"]; // name of program
+              progSteps = program["program"]["steps"]; // number of program steps
+              progPointer = 0; // reset pointer
+              ws.printfAll("Program loaded: %s with %u steps.", progName, progSteps + 1);
+              // serializeJsonPretty(program, Serial);
+              progFile.close();
+            }
+          }
+        }
+      }
+
+      if (strcmp("stopprog", cmd) == 0 ) // stop executing loaded program
+      { 
+        progRunning = false;
+        autoStroke = false;
+      }
+
+      if (strcmp("execprog", cmd) == 0 ) // execute loaded program
+      { 
+        if (progLoaded && progSteps > 0) {
+          progPointer = 0; // reset step pointer
+          progRunning = true; // set flag to begin program
+          progNextStep = true; // ready for next step
+        } else {
+          ws.textAll("Can't execute program.");
+        }
+      }
+
       if (strcmp("saveconfig", cmd) == 0 ) // save motor parameters to json config file
       { 
-        File file = SPIFFS.open("/config.json", "w"); // open file on SPIFFS
+        File file = SPIFFS.open(configFile, "w"); // open file on SPIFFS
         if (!file) {
           ws.textAll("Failed to open config.json for writing."); // failed to open, abort
         } else {
@@ -302,7 +364,7 @@ void runStepper(void * parameter) // task to handle motor related commands
 
       if (strcmp("loadconfig", cmd) == 0 ) // load motor parameters from json config file
       { 
-        File file = SPIFFS.open("/config.json", "r"); // open file on SPIFFS
+        File file = SPIFFS.open(configFile, "r"); // open file on SPIFFS
       
         if (!file) {
           ws.textAll("Failed to open config.json for reading."); // failed to open, abort
@@ -313,7 +375,7 @@ void runStepper(void * parameter) // task to handle motor related commands
           // Deserialize the JSON document
           DeserializationError error = deserializeJson(config, file);
           if (error) {
-            ws.textAll("Error reading config file.");
+            ws.textAll("Unable to deserialize JSON.");
           } else {
             bigmotorSpeed   = config["motspeed"]  | BIG_MOTOR_HZ;
             bigmotorAccel   = config["motaccel"]  | BIG_MOTOR_ACCEL;
@@ -405,6 +467,57 @@ void runStepper(void * parameter) // task to handle motor related commands
       }
     } // end message queue check
     
+    if (progRunning && progNextStep) // process JSON program commands
+    {
+      progNextStep = false; // clear flag, we're not ready for next step
+
+      char key[5];
+      sprintf(key,"%u",progPointer); // convert numeric pointer to char array
+      
+      ws.printfAll("Program step %u of %u", progPointer, progSteps);
+
+      if (progPointer < progSteps) { // load next step
+        progReps = program[key]["reps"]; // how many times to repeat this command, only for strokes
+        const char* progFnc = program[key]["fnc"]; // read function from json
+        const char* progDesc = program[key]["desc"]; // text description of this step
+        ws.printfAll("Exec %s reps %u", progDesc, progReps); // alert user
+
+        if (strcmp("lube", progFnc) == 0 ) { // dispense lube only, automatic delay afterwards
+          lubeAmt = program[key]["lubeamt"]; // how much
+          shootLube = true; // set flag
+          delayMillis = 5000; // 5 sec delay
+          previousMillis = millis(); // starting time for delay
+          doDelay = true;
+        } else if (strcmp("stroke", progFnc) == 0 ) { // setup auto stroke
+          autoStroke = true; // always set autostroke for this command
+          progRepCnt = 0; // zero out counter
+          strokeCnt = 0; // reset counter
+          bigmotorSpeed = program[key]["motspeed"];
+          bigmotorAccel = program[key]["motaccel"];
+          bigmotorMove = program[key]["strokelen"];
+          bigmotorDepth = program[key]["strokedep"];
+          lubeAmt = program[key]["lubeamt"];
+          lubeFreq = program[key]["lubefreq"];
+          autoLube = program[key]["autolube"];
+
+          if (!big_motor->isRunning()) { // set motor parameters if it's not running
+            big_motor->setAcceleration(bigmotorAccel); // update acceleration
+            big_motor->setSpeedInHz(bigmotorSpeed); // update speed
+          }
+        } else if (strcmp("depth", progFnc) == 0 ) { // set depth only
+          bigmotorDepth = program[key]["strokedep"]; 
+          autoStroke = false; // clear flag
+          updateDepth = true; // set flag
+        } else if (strcmp("delay", progFnc) == 0 ) { // set delay only
+          delayMillis = program[key]["delay"]; // milliseconds
+          doDelay = true;
+          previousMillis = millis(); // starting time for delay
+        } // end command selection
+
+        progPointer++; // increment program step pointer
+      }  
+    } // end program runner
+
     if (runCal && motEnabled) // calibrate positioning
     {
       if (!runCal2) { // first calibration pass
@@ -426,6 +539,7 @@ void runStepper(void * parameter) // task to handle motor related commands
       small_motor->setSpeedInHz(smallmotorSpeed); // setup lube pump speed
       small_motor->setAutoEnable(true); // auto enable lube pump driver
       ws.textAll("Motors initialized.");
+      motEnabled = true; // enable motors
     }
     
     if (runTest) // run a self test on the big motor
@@ -468,9 +582,9 @@ void runStepper(void * parameter) // task to handle motor related commands
       xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
 
       // debugging, print task stack utilization
-      // uint32_t result = uxTaskGetStackHighWaterMark(NULL);
-      // sprintf(tmpBuffer.msgArray, "Motor task high water mark %u", result);
-      // xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+      uint32_t result = uxTaskGetStackHighWaterMark(NULL);
+      sprintf(tmpBuffer.msgArray, "Motor task high water mark %u", result);
+      xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
 
     }
 
@@ -495,15 +609,19 @@ void runStepper(void * parameter) // task to handle motor related commands
     //   Serial.printf("Motor position %i\n", big_motor->getCurrentPosition());
     // }
 
-    if (autoStroke) // reciprocate big motor 
+    if (autoStroke && doDelay==false) // reciprocate big motor 
     {
       if (initComplete && motEnabled) { // check if motors are setup first
         updateDepth = false;
         if (big_motor->getCurrentPosition() >= bigmotorMove + bigmotorDepth) {
           big_motor->moveTo(bigmotorDepth); // return to home position
           sprintf(tmpBuffer.msgArray, "Stroke %u complete", strokeCnt);
-          xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
-          // ws.printfAll("stroke %u complete", strokeCnt);
+          xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // add message to the transmit queue     
+          if (progRepCnt++>progReps) { // done enough reps, time for next command
+            progRepCnt=0; // reset counter
+            progNextStep=true; // flag next command
+          }
+            // ws.printfAll("stroke %u complete", strokeCnt);
         } else if (big_motor->getCurrentPosition() <= bigmotorDepth) {
           big_motor->moveTo(bigmotorMove + bigmotorDepth); // move to extended position
           strokeCnt++; // increment stroke counter
@@ -535,6 +653,16 @@ void runStepper(void * parameter) // task to handle motor related commands
       }
     }
 
+    if (doDelay) // disable autostroke for a time period as requested by program
+    {
+      currentMillis = millis(); // update clock
+      autoStroke = false; // disable autostroke
+      if (currentMillis - previousMillis > delayMillis) { // delay is over
+        doDelay = false;
+        progNextStep = true; // ready for next command
+      }
+    }
+    
     delay(5); // probably not needed?
 
   } 

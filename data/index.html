@@ -90,19 +90,16 @@
   <template id="program.html">
     <ons-page id="program">
       <section style="padding: 8px; padding-top: 16px;">
-        <ons-input id="progname" maxlength="10" placeholder="Program Name" float type="text" style="width: 100%;" modifier="underbar"></ons-input>
+        <ons-input id="progname" maxlength="30" placeholder="Program Name" float type="text" style="width: 100%;" modifier="underbar"></ons-input>
         <p></p>
         <ons-button id="loadprog" class="button" modifier="large">Load Program</ons-button>
         <p></p>
-        <ons-button id="saveprog" class="button" modifier="large">Save Program</ons-button>
+        <ons-button id="execprog" class="button" modifier="large">Execute Program</ons-button>
         <p></p>
-        <ons-button id="newprog" class="button" modifier="large">New Program</ons-button>
+        <ons-button id="stopprog" class="button" modifier="large">Stop Program</ons-button>
       </section>
-      <section id="programgrid" style="padding: 8px;">
-        <ons-row>
-          <ons-col width="25%">Function</ons-col>
-          <ons-col width="75%">Value</ons-col>
-        </ons-row>
+      <section style="padding: 8px;">
+        <ons-list id="proginfo"></ons-list>
       </section>
     </ons-page>
   </template>

@@ -1,0 +1,141 @@
+{
+    "program":{
+        "name":"prog0",
+        "steps":11
+    },
+    "0":{
+        "fnc":"lube",
+        "reps":1,
+        "desc":"get ready",
+        "lubeamt":2000
+    },
+    "1":{
+        "fnc":"stroke",
+        "reps":50,
+        "desc":"warmup, short and fast",
+        "motspeed":600,
+        "motaccel":20000,
+        "strokelen":50,
+        "strokedep":0,
+        "lubeamt":200,
+        "lubefreq":20,
+        "autostroke":true,
+        "autolube":true
+    },
+    "2":{
+        "fnc":"stroke",
+        "reps":20,
+        "desc":"warmup, longer, slower, increase depth",
+        "motspeed":300,
+        "motaccel":20000,
+        "strokelen":200,
+        "strokedep":50,
+        "lubeamt":200,
+        "lubefreq":10,
+        "autostroke":true,
+        "autolube":true
+    },
+    "3":{
+        "fnc":"stroke",
+        "reps":20,
+        "desc":"longer, bit faster",
+        "motspeed":400,
+        "motaccel":20000,
+        "strokelen":300,
+        "strokedep":50,
+        "lubeamt":200,
+        "lubefreq":20,
+        "autostroke":true,
+        "autolube":true
+    },
+    "4":{
+        "fnc":"stroke",
+        "reps":20,
+        "desc":"longer, faster",
+        "motspeed":500,
+        "motaccel":20000,
+        "strokelen":400,
+        "strokedep":50,
+        "lubeamt":200,
+        "lubefreq":20,
+        "autostroke":true,
+        "autolube":true
+    },
+    "5":{
+        "fnc":"stroke",
+        "reps":50,
+        "desc":"deep, short hammering, lots of lube",
+        "motspeed":600,
+        "motaccel":20000,
+        "strokelen":50,
+        "strokedep":400,
+        "lubeamt":400,
+        "lubefreq":5,
+        "autostroke":true,
+        "autolube":true
+    },
+    "6":{
+        "fnc":"delay",
+        "reps":50,
+        "desc":"wait for it",
+        "delay":30000
+    },
+    "7":{
+        "fnc":"stroke",
+        "reps":10,
+        "desc":"slow and deep",
+        "motspeed":100,
+        "motaccel":20000,
+        "strokelen":200,
+        "strokedep":400,
+        "lubeamt":200,
+        "lubefreq":20,
+        "autostroke":true,
+        "autolube":true
+    },
+    "8":{
+        "fnc":"stroke",
+        "reps":20,
+        "desc":"long, faster",
+        "motspeed":300,
+        "motaccel":20000,
+        "strokelen":500,
+        "strokedep":100,
+        "lubeamt":400,
+        "lubefreq":10,
+        "autostroke":true,
+        "autolube":true
+    },
+    "9":{
+        "fnc":"stroke",
+        "reps":20,
+        "desc":"long, faster",
+        "motspeed":500,
+        "motaccel":20000,
+        "strokelen":500,
+        "strokedep":100,
+        "lubeamt":400,
+        "lubefreq":10,
+        "autostroke":true,
+        "autolube":true
+    },
+    "10":{
+        "fnc":"stroke",
+        "reps":50,
+        "desc":"long and fast",
+        "motspeed":800,
+        "motaccel":20000,
+        "strokelen":500,
+        "strokedep":100,
+        "lubeamt":400,
+        "lubefreq":10,
+        "autostroke":true,
+        "autolube":true
+    },
+    "11":{
+        "fnc":"depth",
+        "reps":1,
+        "desc":"all done",
+        "strokedep":0
+    }
+}
