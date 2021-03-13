@@ -63,8 +63,10 @@ ons.ready(function() {
                 var myKey = dataMsg.substring(0,4);
                 if(myKey=="Exec" || myKey=="Prog") { // received program exec message
                   progInfo('<ons-list-item class="program">'+dataMsg);
+                } else if(myKey=="Conf") { // received program exec message
+                  configList('<ons-list-item class="config">'+dataMsg);
                 } else { // other message
-                  message('<ons-list-item class="message">Recv: '+dataMsg);
+                  message('<ons-list-item class="message">'+dataMsg);
                 }
               }
             }
@@ -87,6 +89,7 @@ ons.ready(function() {
   myTabbar.addEventListener("postchange", function(e){
     // alert("tab " + e.index);
 
+    // BUTTONS
     $('.button').unbind().click(function( event ){ // listen for button click
       var myId = $( this ).attr('id'); 
       var myMessage ={};
@@ -116,6 +119,7 @@ ons.ready(function() {
       event.preventDefault();
     }); // end button click
 
+    // SWITCHES
     $('ons-switch').unbind().change(function( event ){ // listen for switch change
       var myId = $( this ).attr('id');
       var mySwitch = document.getElementById(myId);
@@ -156,7 +160,14 @@ ons.ready(function() {
         } else { // unchecked
           myMessage.dat = 0x00;
         }
-  
+      } else if (myId=="dualspeed") {
+        myMessage.fnc = "motor"; 
+        myMessage.cmd = myId; 
+        if (myValue) { // checked
+          myMessage.dat = 0x01;
+        } else { // unchecked
+          myMessage.dat = 0x00;
+        }
       }
   
       if (myMessage.dat != null){ // function, command, value
@@ -165,6 +176,7 @@ ons.ready(function() {
       // event.preventDefault();
     }); // end switch change event
 
+    // NUMBER BOXES
     $('.numbox').unbind().on("change", function(){ // listen for numbox change
       var myId = $( this ).attr('id');
       var myValue = $( this ).val();
@@ -199,6 +211,10 @@ function message(msg){
 
 function progInfo(msg){
   $('#proginfo').prepend(msg+'</ons-list-item>');
+}
+
+function configList(msg){
+  $('#configlist').prepend(msg+'</ons-list-item>');
 }
 
 function isJson(str) {

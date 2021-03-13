@@ -355,21 +355,23 @@ void runStepper(void * parameter) // task to handle motor related commands
       { 
         File file = SPIFFS.open(configFile, "w"); // open file on SPIFFS
         if (!file) {
-          ws.textAll("Failed to open config.json for writing."); // failed to open, abort
+          ws.textAll("Config error: failed to open config.json for writing."); // failed to open, abort
         } else {
           // successfully opened, proceed
-          StaticJsonDocument<150> config;
+          StaticJsonDocument<500> config;
 
           config["motspeed"]  = bigmotorSpeed;
+          config["speedout"]  = bigmotorOut;
+          config["speedin"]   = bigmotorIn;
           config["motaccel"]  = bigmotorAccel;
           config["lubeamt"]   = lubeAmt;
           config["lubefreq"]  = lubeFreq;
           config["lubespeed"] = smallmotorSpeed;
 
           if (serializeJsonPretty(config, file) == 0) { // write contents to file
-            ws.textAll("Failed to write to config.json");
+            ws.textAll("Config error: failed to write to config.json");
           } else {
-              ws.textAll("Config file updated.");
+              ws.textAll("Config file saved.");
           }
 
           file.close(); // close file handle
@@ -381,17 +383,19 @@ void runStepper(void * parameter) // task to handle motor related commands
         File file = SPIFFS.open(configFile, "r"); // open file on SPIFFS
       
         if (!file) {
-          ws.textAll("Failed to open config.json for reading."); // failed to open, abort
+          ws.textAll("Config error: failed to open config.json for reading."); // failed to open, abort
         } else {
           // successfully opened, proceed
-          StaticJsonDocument<150> config;
+          StaticJsonDocument<500> config;
 
           // Deserialize the JSON document
           DeserializationError error = deserializeJson(config, file);
           if (error) {
-            ws.textAll("Unable to deserialize JSON.");
+            ws.textAll("Config error: unable to deserialize JSON.");
           } else {
             bigmotorSpeed   = config["motspeed"]  | BIG_MOTOR_HZ;
+            bigmotorOut     = config["speedout"]  | BIG_MOTOR_HZ;
+            bigmotorIn      = config["speedin"]   | BIG_MOTOR_HZ;
             bigmotorAccel   = config["motaccel"]  | BIG_MOTOR_ACCEL;
             lubeAmt         = config["lubeamt"]   | 200;
             lubeFreq        = config["lubefreq"]  | 10;
@@ -399,9 +403,9 @@ void runStepper(void * parameter) // task to handle motor related commands
 
             initMotors = true; // activate some of the parameter changes
             configLoaded = true; // set flag that we've loaded config successfuy
+            updateClient = true; // set flag to push update to clients
 
-            ws.textAll("Config file loaded");
-
+            ws.textAll("Config file loaded.");
           }
 
           file.close(); // close file handle
@@ -442,6 +446,10 @@ void runStepper(void * parameter) // task to handle motor related commands
         } else if (strcmp("strokedep", cmd) == 0 ) { // command "strokedep" 
           bigmotorDepth = dat;
           updateDepth = true;
+        } else if (strcmp("speedout", cmd) == 0 ) { // command "speedout" 
+          bigmotorOut = dat;
+        } else if (strcmp("speedin", cmd) == 0 ) { // command "speedin" 
+          bigmotorIn = dat;
         } else if (strcmp("motspeed", cmd) == 0 ) { // command "motspeed" 
           bigmotorSpeed = dat;
           updateSpeed = true;
@@ -530,24 +538,28 @@ void runStepper(void * parameter) // task to handle motor related commands
           autoStroke = false; // clear flag
           updateDepth = true; // set flag
         } else if (strcmp("loop", progFnc) == 0 ) { // loop back in program
-          if (progLoop) { // already in a loop, are we done yet?
-            progNextStep = true; // set flag for next step, or jumping back
+          progNextStep = true; // set flag for next step, or jumping back
 
-            if (progLoopCnt++ < progReps) { // equal or greater than desired loops?
+          if (progLoop) { // already in a loop, are we done yet?
+            if (progLoopCnt++ < progReps) { // loop multiple times based on reps
               progPointer = program[key]["jumpto"] | 0; // reset pointer
-              ws.printfAll("Program looping back to step %u", progPointer + 1);
-            } else {
+              progRepCnt = 0; // reset counter
+              strokeCnt = 0; // reset counter
+              autoStroke = false; // clear flag
+              ws.printfAll("Exec loop jumpto=%u progPointer=%u", program[key]["jumpto"], progPointer);
+              // ws.printfAll("Program looping again to step %u", progPointer + 1);
+            } else { // number of loops completed, don't reset pointer
               ws.textAll("Program loop completed");
-              progLoop = false; // clear flag, done looping
             }
           } else { // ooh, first time loop
             progLoopCnt = 0; // reset counter
+            progRepCnt = 0; // reset counter
+            strokeCnt = 0; // reset counter
+            autoStroke = false; // clear flag
             progPointer = program[key]["jumpto"] | 0; // reset pointer
-            progNextStep = true;
             progLoop = true; // set flag for next time around
-            ws.printfAll("Program looping back to step %u", progPointer + 1);
+            ws.printfAll("Exec loop jumpto=%u progPointer=%u", program[key]["jumpto"], progPointer);
           }
-
         } else if (strcmp("delay", progFnc) == 0 ) { // set delay only
           delayMillis = program[key]["delay"]; // milliseconds
           doDelay = true;
@@ -638,14 +650,14 @@ void runStepper(void * parameter) // task to handle motor related commands
     {
       updateClient = false;
 
-      const char* mySwitches = "{\"switches\":{\"runtest\":%i,\"motenabled\":%i,\"autostroke\":%i,\"autolube\":%i}}";
-      const char* myConfig = "{\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i}";
+      const char* mySwitches = "{\"switches\":{\"runtest\":%i,\"motenabled\":%i,\"autostroke\":%i,\"autolube\":%i,\"dualspeed\":%i}}";
+      const char* myConfig = "{\"speedin\":%u,\"speedout\":%u,\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i}";
       // const char* myProg = "Program running %i step %u/%u";
 
-      sprintf(tmpBuffer.msgArray, myConfig, lubeFreq, lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, bigmotorMove);
+      sprintf(tmpBuffer.msgArray, myConfig, bigmotorIn, bigmotorOut, lubeFreq, lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, bigmotorMove);
       xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
       
-      sprintf(tmpBuffer.msgArray, mySwitches, runTest, motEnabled, autoStroke, autoLube);
+      sprintf(tmpBuffer.msgArray, mySwitches, runTest, motEnabled, autoStroke, autoLube, dualSpeed);
       xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
 
       // sprintf(tmpBuffer.msgArray, myProg, progRunning, progPointer, progSteps);
