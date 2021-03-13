@@ -107,6 +107,7 @@ ons.ready(function() {
         if (myFilename.length > 1 && myFilename.substring(0,1)=="/") {
           myMessage.txt = myFilename; // assign filename
           myMessage.dat = 0x01;
+          progInfo("CLEARLIST"); // clear program info list
         } else {
           alert("Problem with file name, maybe missing leading /");
           return;
@@ -205,16 +206,18 @@ function sendPack(myMessage, socket) {
 }
 
 function message(msg){
-  $('#diagList').prepend(msg+'</ons-list-item>');
-  // ons.compile($('#diagList'));
+  if (msg == "CLEARLIST") $('#diagList').empty();
+  else $('#diagList').prepend(msg+'</ons-list-item>');
 }
 
 function progInfo(msg){
-  $('#proginfo').prepend(msg+'</ons-list-item>');
+  if (msg == "CLEARLIST") $('#proginfo').empty();
+  else $('#proginfo').prepend(msg+'</ons-list-item>');
 }
 
 function configList(msg){
-  $('#configlist').prepend(msg+'</ons-list-item>');
+  if (msg == "CLEARLIST") $('#configlist').empty();
+  else $('#configlist').prepend(msg+'</ons-list-item>');
 }
 
 function isJson(str) {

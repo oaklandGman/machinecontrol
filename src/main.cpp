@@ -515,6 +515,7 @@ void runStepper(void * parameter) // task to handle motor related commands
           delayMillis = 5000; // 5 sec delay
           previousMillis = millis(); // starting time for delay
           doDelay = true;
+          progPointer++; // increment program step pointer
         } else if (strcmp("stroke", progFnc) == 0 ) { // setup auto stroke
           autoStroke = true; // always set autostroke for this command
           updateStroke = true; // set flag to force position update
@@ -531,25 +532,28 @@ void runStepper(void * parameter) // task to handle motor related commands
           bigmotorOut = program[key]["speedout"] | bigmotorSpeed;
           bigmotorIn = program[key]["speedin"] | bigmotorSpeed;
           big_motor->setSpeedInHz(bigmotorSpeed); // update speed 
+          progPointer++; // increment program step pointer
         } else if (strcmp("depth", progFnc) == 0 ) { // set depth only
           bigmotorSpeed = program[key]["motspeed"] | BIG_MOTOR_HZ;
           bigmotorDepth = program[key]["strokedep"]; // set depth offset from home position
           big_motor->setSpeedInHz(bigmotorSpeed); // update speed
           autoStroke = false; // clear flag
           updateDepth = true; // set flag
+          progPointer++; // increment program step pointer
         } else if (strcmp("loop", progFnc) == 0 ) { // loop back in program
           progNextStep = true; // set flag for next step, or jumping back
 
           if (progLoop) { // already in a loop, are we done yet?
-            if (progLoopCnt++ < progReps) { // loop multiple times based on reps
+            progLoopCnt++; // increment counter
+            if (progLoopCnt < progReps) { // loop multiple times based on reps
               progPointer = program[key]["jumpto"] | 0; // reset pointer
               progRepCnt = 0; // reset counter
               strokeCnt = 0; // reset counter
               autoStroke = false; // clear flag
-              ws.printfAll("Exec loop jumpto=%u progPointer=%u", program[key]["jumpto"], progPointer);
-              // ws.printfAll("Program looping again to step %u", progPointer + 1);
+              ws.printfAll("Program looping again to progPointer %u (%u/%u)", progPointer, progLoopCnt, progReps);
             } else { // number of loops completed, don't reset pointer
               ws.textAll("Program loop completed");
+              progPointer++; // advance pointer
             }
           } else { // ooh, first time loop
             progLoopCnt = 0; // reset counter
@@ -558,16 +562,16 @@ void runStepper(void * parameter) // task to handle motor related commands
             autoStroke = false; // clear flag
             progPointer = program[key]["jumpto"] | 0; // reset pointer
             progLoop = true; // set flag for next time around
-            ws.printfAll("Exec loop jumpto=%u progPointer=%u", program[key]["jumpto"], progPointer);
+            ws.printfAll("Program looping to progPointer %u (%u/%u)", progPointer, progLoopCnt, progReps);
           }
         } else if (strcmp("delay", progFnc) == 0 ) { // set delay only
           delayMillis = program[key]["delay"]; // milliseconds
           doDelay = true;
           ws.printfAll("Exec delay for %ums", delayMillis);
           previousMillis = millis(); // starting time for delay
+          progPointer++; // increment program step pointer
         } // end command selection
 
-        progPointer++; // increment program step pointer
       } else if (progPointer > progSteps) { // end of program
         progRunning = false; // clear flag
         autoStroke = false;
