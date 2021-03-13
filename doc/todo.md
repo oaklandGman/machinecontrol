@@ -20,7 +20,10 @@ big things:
 1. figure out scripting method for programming (json?)
     a. json scripting working, no easy client side editor yet
     b. only very basic feature set implemented
+    c. added dual speed stroke mode!
+    d. added loop command
 2. get micro-sd interface working
 3. save / load config file to sd card
 4. drop-down function selection (manual, auto, run program)
 5. move all hosted files over to sd card
+6. implement async wifimanager

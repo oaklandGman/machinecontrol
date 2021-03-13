@@ -247,8 +247,11 @@ void runStepper(void * parameter) // task to handle motor related commands
   bool progLoaded = false; // flag indicating program has been loaded
   bool progRunning = false; // flag indicating program is running
   bool progNextStep = false; // flag indicating program ready for next step
+  bool progLoop = false; // flag indicating program is running in a loop
   bool debugMotor = false; // flag to print diagnostics for big motor
   bool dualSpeed = false; // flag indicating different extend / retract speeds
+  bool listFiles = false; // flag to send list of files to client
+
 
   unsigned long previousMillis = 0; // last time on the clock
   unsigned long currentMillis = millis();
@@ -272,6 +275,7 @@ void runStepper(void * parameter) // task to handle motor related commands
   uint8_t progReps    = 0; // number of reps for current program command
   uint8_t progRepCnt  = 0; // counter for number of reps completed
   uint8_t progSteps   = 0; // number of steps in program
+  uint8_t progLoopCnt = 0; // number of times program has looped
 
   const char* configFile = "/config.json";
 
@@ -296,6 +300,10 @@ void runStepper(void * parameter) // task to handle motor related commands
         // handle estop
       }
 
+      if (strcmp("listfiles", cmd) == 0 ) { // set flag to send file list to client
+        listFiles = true;
+      }
+
       if (strcmp("loadprog", cmd) == 0 ) // open json program command file
       {
         const char* filename = command.txt; // copy filename from buffer to local variable
@@ -303,16 +311,18 @@ void runStepper(void * parameter) // task to handle motor related commands
           File progFile = SPIFFS.open(filename, "r"); // open file on SPIFFS
         
           if (!progFile) {
-            ws.printfAll("Failed to open %s for reading.", filename); // failed to open, abort
+            ws.printfAll("Program error: failed to open %s for reading.", filename); // failed to open, abort
           } else { // successfully opened, proceed
             // Deserialize the JSON document
             DeserializationError error = deserializeJson(program, progFile);
             if (error) {
-              ws.textAll("Unable to deserialize JSON.");
+              ws.textAll("Program error: unable to deserialize JSON.");
             } else {
               progLoaded = true; // set flag
               progRunning = false; // clear flag
               initMotors = true; // set flag, get things ready
+              progLoopCnt = 0; // zero loop counter
+
               const char* progName = program["program"]["name"]; // name of program
               progSteps = program["program"]["steps"]; // number of program steps
               progPointer = 0; // reset pointer
@@ -337,7 +347,7 @@ void runStepper(void * parameter) // task to handle motor related commands
           progRunning = true; // set flag to begin program
           progNextStep = true; // ready for next step
         } else {
-          ws.textAll("Can't execute program.");
+          ws.textAll("Program error: no program loaded.");
         }
       }
 
@@ -519,9 +529,29 @@ void runStepper(void * parameter) // task to handle motor related commands
           big_motor->setSpeedInHz(bigmotorSpeed); // update speed
           autoStroke = false; // clear flag
           updateDepth = true; // set flag
+        } else if (strcmp("loop", progFnc) == 0 ) { // loop back in program
+          if (progLoop) { // already in a loop, are we done yet?
+            progNextStep = true; // set flag for next step, or jumping back
+
+            if (progLoopCnt++ < progReps) { // equal or greater than desired loops?
+              progPointer = program[key]["jumpto"] | 0; // reset pointer
+              ws.printfAll("Program looping back to step %u", progPointer + 1);
+            } else {
+              ws.textAll("Program loop completed");
+              progLoop = false; // clear flag, done looping
+            }
+          } else { // ooh, first time loop
+            progLoopCnt = 0; // reset counter
+            progPointer = program[key]["jumpto"] | 0; // reset pointer
+            progNextStep = true;
+            progLoop = true; // set flag for next time around
+            ws.printfAll("Program looping back to step %u", progPointer + 1);
+          }
+
         } else if (strcmp("delay", progFnc) == 0 ) { // set delay only
           delayMillis = program[key]["delay"]; // milliseconds
           doDelay = true;
+          ws.printfAll("Exec delay for %ums", delayMillis);
           previousMillis = millis(); // starting time for delay
         } // end command selection
 
@@ -584,6 +614,25 @@ void runStepper(void * parameter) // task to handle motor related commands
         // ws.printfAll("speed %u moving %i", bigmotorSpeed, localMove);
       } 
     } // end of runtest
+
+    if (listFiles) // send list of SPIFFs files to client
+    {
+      listFiles = false; // clear flag
+
+      File root = SPIFFS.open("/");
+    
+      File file = root.openNextFile();
+    
+      while(file){
+          const char* fName = file.name();
+          ws.printfAll("Program file %s", fName);
+    
+          file = root.openNextFile();
+      }
+      
+      file.close();
+      root.close();
+    }
 
     if (updateClient) // send some parameters to client on request, crashes ESP if run too often
     {
@@ -652,7 +701,7 @@ void runStepper(void * parameter) // task to handle motor related commands
         if (big_motor->getCurrentPosition() >= bigmotorMove + bigmotorDepth) {
           if (dualSpeed) big_motor->setSpeedInHz(bigmotorIn);
           big_motor->moveTo(bigmotorDepth); // return to home position
-          sprintf(tmpBuffer.msgArray, "Stroke %u rep %u", strokeCnt, progRepCnt);
+          sprintf(tmpBuffer.msgArray, "Stroke %u rep %u dual %i", strokeCnt, progRepCnt, dualSpeed);
           xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // add message to the transmit queue     
           if (!big_motor->isRunning()) { // set motor parameters if it's not running
             big_motor->setAcceleration(bigmotorAccel); // update acceleration
@@ -703,6 +752,8 @@ void runStepper(void * parameter) // task to handle motor related commands
       if (currentMillis - previousMillis > delayMillis) { // delay is over
         doDelay = false;
         progNextStep = true; // ready for next command
+        sprintf(tmpBuffer.msgArray, "Delay complete %ums", delayMillis);
+        xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
       }
     }
     
