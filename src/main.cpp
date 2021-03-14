@@ -347,6 +347,7 @@ void runStepper(void * parameter) // task to handle motor related commands
       { 
         progRunning = false;
         autoStroke = false;
+        ws.textAll("Program execution halted.");
       }
 
       if (strcmp("execprog", cmd) == 0 ) // execute loaded program
@@ -380,7 +381,7 @@ void runStepper(void * parameter) // task to handle motor related commands
           if (serializeJsonPretty(config, file) == 0) { // write contents to file
             ws.textAll("Config error: failed to write to config.json");
           } else {
-              ws.textAll("Config file saved.");
+            ws.textAll("Config file saved.");
           }
 
           file.close(); // close file handle
