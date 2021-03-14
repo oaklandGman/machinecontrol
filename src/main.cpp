@@ -446,6 +446,7 @@ void runStepper(void * parameter) // task to handle motor related commands
         } else if (strcmp("strokedep", cmd) == 0 ) { // command "strokedep" 
           bigmotorDepth = dat;
           updateDepth = true;
+          updateStroke = true;
         } else if (strcmp("speedout", cmd) == 0 ) { // command "speedout" 
           bigmotorOut = dat;
         } else if (strcmp("speedin", cmd) == 0 ) { // command "speedin" 
@@ -468,12 +469,14 @@ void runStepper(void * parameter) // task to handle motor related commands
             strcpy(tmpBuffer.msgArray, "Motors enabled.");
             xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
             digitalWrite(BIG_MOTOR_SLEEP, HIGH); // enable motor driver
+            digitalWrite(SMALL_MOTOR_SLEEP, HIGH); // enable motor driver
             motEnabled = true;
           }
           else {
             strcpy(tmpBuffer.msgArray, "Motors disabled.");
             xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
             digitalWrite(BIG_MOTOR_SLEEP, LOW); // disable motor driver
+            digitalWrite(SMALL_MOTOR_SLEEP, LOW); // disable motor driver
             motEnabled = false;
           }
         } else if (strcmp("sw1", cmd) == 0 ) { // handle limit switch
@@ -536,7 +539,7 @@ void runStepper(void * parameter) // task to handle motor related commands
         } else if (strcmp("depth", progFnc) == 0 ) { // set depth only
           bigmotorSpeed = program[key]["motspeed"] | BIG_MOTOR_HZ;
           bigmotorDepth = program[key]["strokedep"]; // set depth offset from home position
-          big_motor->setSpeedInHz(bigmotorSpeed); // update speed
+          // big_motor->setSpeedInHz(bigmotorSpeed); // update speed
           autoStroke = false; // clear flag
           updateDepth = true; // set flag
           progPointer++; // increment program step pointer
@@ -599,7 +602,7 @@ void runStepper(void * parameter) // task to handle motor related commands
       big_motor->setSpeedInHz(bigmotorSpeed); // setup inital speed
       big_motor->setAcceleration(bigmotorAccel); // setup default acceleration
       small_motor->setSpeedInHz(smallmotorSpeed); // setup lube pump speed
-      small_motor->setAutoEnable(true); // auto enable lube pump driver
+      small_motor->setAutoEnable(false); // auto enable lube pump driver
       digitalWrite(BIG_MOTOR_SLEEP, HIGH); // enable driver
       ws.textAll("Motors initialized.");
       motEnabled = true; // enable motors
@@ -737,8 +740,7 @@ void runStepper(void * parameter) // task to handle motor related commands
           }
         } else if (updateStroke) { // update to new longer stroke length
           if (dualSpeed) big_motor->setSpeedInHz(bigmotorIn);
-          big_motor->moveTo(bigmotorMove + bigmotorDepth); // move to extended position
-          strokeCnt++; // increment stroke counter
+          big_motor->moveTo(0); // move to home
           updateStroke = false;
         }
       } else if (!initComplete && motEnabled) { // setup motors first
@@ -933,22 +935,24 @@ void setup(){
 
   if (big_motor) { // set up drive motor
     big_motor->setDirectionPin(BIG_MOTOR_DIR, false); // inverted direction pin
-    // big_motor->setEnablePin(BIG_MOTOR_SLEEP); // commented out, will manually control sleep
-    // big_motor->setAutoEnable(false);
+    big_motor->setEnablePin(BIG_MOTOR_SLEEP); 
+    // big_motor->setAutoEnable(false); // will manually control sleep
 
     big_motor->setSpeedInHz(BIG_MOTOR_HZ);      
     big_motor->setAcceleration(BIG_MOTOR_ACCEL);   
   } 
 
   if (small_motor) { // set up small motor
+    small_motor->setDirectionPin(SMALL_MOTOR_DIR);
     small_motor->setEnablePin(SMALL_MOTOR_SLEEP);
-    small_motor->setAutoEnable(true);
+    small_motor->setAutoEnable(false); // will manually control sleep
 
     small_motor->setSpeedInHz(SMALL_MOTOR_HZ);      
     small_motor->setAcceleration(SMALL_MOTOR_ACCEL);   
   }
 
   digitalWrite(SMALL_MOTOR_SLEEP, LOW); // turn off driver
+  digitalWrite(BIG_MOTOR_SLEEP, LOW); // turn off driver
 
   // small_motor->move(1000); // test motor
   // big_motor->move(1000); // test motor
