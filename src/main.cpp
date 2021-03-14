@@ -8,6 +8,9 @@
 #include <SPIFFSEditor.h>
 #include "my_passwords.h"
 
+// comment this line out for normal operation
+// #define MOTOR_TEST 
+
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 AsyncEventSource events("/events");
@@ -18,13 +21,11 @@ const char* password = "xxxx";
 const char* http_username = "xxxx";
 const char* http_password = "xxxx";
 #endif
+
 const char* PARAM_MESSAGE = "Machine Control";
 const char* hostName = "machine"; // network hostname
 
-const char* fncMotor = "motor"; // string for motor function messages
-const char* fncInfo = "info"; // string for info function messages
-
-const byte DEBOUNCETIME = 10; // debounce time in millis 
+const byte DEBOUNCETIME = 100; // debounce time in millis 
 
 // IO pin assignments
 const byte BIG_MOTOR_STEP     = 19;
@@ -43,6 +44,9 @@ const unsigned int BIG_MOTOR_HZ      = 9000;
 const unsigned int BIG_MOTOR_ACCEL   = 40000;
 const unsigned int SMALL_MOTOR_HZ    = 400;
 const unsigned int SMALL_MOTOR_ACCEL = 400; // infinite acceleration
+
+unsigned long lastMs1 = 0; // testing
+unsigned long lastMs2 = 0; // testing
 
 struct WSmsg // structure for msgpack messages to send/recv over websocket
 {
@@ -98,7 +102,7 @@ void IRAM_ATTR handleESTOP() // super simple ISR to debounce switch
     xSemaphoreGiveFromISR(syncESTOP, NULL);
 }
 
-void watchSW1(void * parameter) // task to watch limit switch 1 input
+void watchSW1(void * parameter) // task to watch limit switch 1 input SW1 on back of machine, trigger traveling forward
 {
   volatile uint32_t sw1Last = 0; // last triggered time for switch
   struct MOTcmd motor; // buffer for motor related commands
@@ -107,36 +111,36 @@ void watchSW1(void * parameter) // task to watch limit switch 1 input
   attachInterrupt(digitalPinToInterrupt(LIMIT_SW1), handleSW1, FALLING);
 
   for (;;) { // loop forever
-    xSemaphoreTake(syncSW1, portMAX_DELAY);
+    xSemaphoreTake(syncSW1, portMAX_DELAY); // block task until semaphore released
 
     if (millis() - sw1Last > DEBOUNCETIME) {
       // input triggered
       strcpy(motor.cmd, "sw1");
-      motor.dat = true;
-      // xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put info on motor control queue
-      sw1Last = millis();
+      motor.dat = digitalRead(LIMIT_SW1);
+      xQueueSend(motQueue, &motor, 5 / portTICK_PERIOD_MS); // put info on motor control queue
     }
+    sw1Last = millis(); // record last time interrupt was triggered
   }
 }
 
-void watchSW2(void * parameter) // task to switch limit switch 2 input
+void watchSW2(void * parameter) // task to switch limit switch 2 input SW2 on front of machine, trigger traveling backward
 {
   volatile uint32_t sw2Last = 0; // last triggered time for switch
   struct MOTcmd motor; // buffer for motor control message
 
   pinMode(LIMIT_SW2, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(LIMIT_SW2), handleSW1, FALLING);
+  attachInterrupt(digitalPinToInterrupt(LIMIT_SW2), handleSW2, FALLING);
 
   for (;;) { // loop forever
-    xSemaphoreTake(syncSW2, portMAX_DELAY);
+    xSemaphoreTake(syncSW2, portMAX_DELAY); // block task until semaphore released
   
     if (millis() - sw2Last > DEBOUNCETIME) {
       // input triggered
       strcpy(motor.cmd, "sw2");
-      motor.dat = true;
-      // xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put info on motor control queue
-      sw2Last = millis();
+      motor.dat = digitalRead(LIMIT_SW2);
+      xQueueSend(motQueue, &motor, 5 / portTICK_PERIOD_MS); // put info on motor control queue
     }
+    sw2Last = millis(); // record last time interrupt was triggered
   }
 }
 
@@ -154,10 +158,10 @@ void watchESTOP(void * parameter) // task to watch ESTOP input
     if (millis() - estopLast > DEBOUNCETIME) { // check elapsed time between interrupts
       // input triggered, send message to motor control task 
       strcpy(motor.cmd, "estop");
-      motor.dat = true;
-      // xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put info on motor control queue
-      estopLast = millis();
+      motor.dat = digitalRead(EMERGENCY_STOP_PIN);
+      // xQueueSend(motQueue, &motor, 5 / portTICK_PERIOD_MS); // put info on motor control queue
     }
+    estopLast = millis(); // record last time interrupt was triggered
   }
 }
 
@@ -171,7 +175,7 @@ void wsMsgtask(void * parameter) // task to handle sending and receiving websock
   for (;;) { // infinite loop
     // check receive queue every loop
     if ( uxQueueMessagesWaiting(wsmsgQueue) ) { // message in the queue, dump it to debug console
-      xQueueReceive(wsmsgQueue, &data, 5 / portMAX_DELAY); // grab message from queue
+      xQueueReceive(wsmsgQueue, &data, 5 / portTICK_PERIOD_MS); // grab message from queue
       // Serial.printf("Received msg from client %u: ", data.msgId);
       // for (size_t i=0; i < sizeof(data.msgArray) - 1; i++ ) {
       //  Serial.printf("%02x ", data.msgArray[i]);
@@ -196,11 +200,14 @@ void wsMsgtask(void * parameter) // task to handle sending and receiving websock
           if (txt) strcpy(motor.txt, txt); // copy text string to buffer if it is set
           motor.dat = doc["dat"]; // assign integer value to buffer
 
-          xQueueSend(motQueue, &motor, 5 / portMAX_DELAY); // put command on motor control queue
+          xQueueSend(motQueue, &motor, 5 / portTICK_PERIOD_MS); // put command on motor control queue
         } else if (strcmp("info", fnc)==0) {
-          uint32_t result = uxTaskGetStackHighWaterMark(NULL);
-          sprintf(data.msgArray, "Message task high water mark %u", result);
-          xQueueSend(wsoutQueue, &data, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+          uint32_t msgStack = uxTaskGetStackHighWaterMark(NULL);
+          uint32_t runStack = uxTaskGetStackHighWaterMark(taskStepper);
+          uint32_t freeHeap = ESP.getFreeHeap();
+          sprintf(data.msgArray, "Heap %u, Message task %u, Stepper task %u", freeHeap, msgStack, runStack);
+          ws.textAll(data.msgArray); // blast to all connected clients
+          // xQueueSend(wsoutQueue, &data, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
         }
       }
 
@@ -212,11 +219,12 @@ void wsMsgtask(void * parameter) // task to handle sending and receiving websock
     if (millis() - lastMillis >= 500) { // check transmit queue every 500ms
       if ( uxQueueMessagesWaiting(wsoutQueue) ) { // message in the queue, dump it to debug console
         // StaticJsonDocument<200> doc;
-        xQueueReceive(wsoutQueue, &data, 5 / portMAX_DELAY); // grab message from queue
+        xQueueReceive(wsoutQueue, &data, 5 / portTICK_PERIOD_MS); // grab message from queue
+        char* myMsg = data.msgArray;
 
-        ws.textAll(data.msgArray);
+        ws.textAll(myMsg); // blast to all connected clients
 
-        lastMillis = millis();
+        lastMillis = millis(); // record last time message was sent
       }
     } // end transmit queue check
 
@@ -251,7 +259,7 @@ void runStepper(void * parameter) // task to handle motor related commands
   bool debugMotor = false; // flag to print diagnostics for big motor
   bool dualSpeed = false; // flag indicating different extend / retract speeds
   bool listFiles = false; // flag to send list of files to client
-
+  bool loadConfig = true; // flag to load configuration on startup
 
   unsigned long previousMillis = 0; // last time on the clock
   unsigned long currentMillis = millis();
@@ -265,9 +273,10 @@ void runStepper(void * parameter) // task to handle motor related commands
   int localMove = 0; // used in selftest routine
   int smallmotorSpeed = SMALL_MOTOR_HZ; // speed of small motor
   int lubeAmt = 400; // amount of lube dispensed per request
-  int sw1Pos = 0; // step count for limit switch 1
-  int sw2Pos = 0; // step count for limit switch 2
   int delayMillis = 0; // milliseconds for delay
+
+  int32_t sw1Pos = 0; // step count for limit switch 1
+  int32_t sw2Pos = 0; // step count for limit switch 2
 
   uint8_t strokeCnt   = 0; // number of strokes since last lube
   uint8_t lubeFreq    = 10; // number of strokes between lube
@@ -289,12 +298,12 @@ void runStepper(void * parameter) // task to handle motor related commands
     if (uxQueueMessagesWaiting(motQueue)) // check queue for new WS commands
     {
       // queue not empty, grab a message and process it
-      xQueueReceive(motQueue, &command, 5 / portMAX_DELAY);
+      xQueueReceive(motQueue, &command, 5 / portTICK_PERIOD_MS);
 
       const char* cmd = command.cmd; // copy command from buffer to a local variable
       int dat = command.dat; // copy data from buffer to local variable
       
-      // ws.printfAll("Received command %s data %i", cmd, dat); // print debug message
+      ws.printfAll("Received command %s data %i", cmd, dat); // print debug message
 
       if (strcmp("estop", cmd) == 0 ) { 
         // handle estop
@@ -380,36 +389,7 @@ void runStepper(void * parameter) // task to handle motor related commands
 
       if (strcmp("loadconfig", cmd) == 0 ) // load motor parameters from json config file
       { 
-        File file = SPIFFS.open(configFile, "r"); // open file on SPIFFS
-      
-        if (!file) {
-          ws.textAll("Config error: failed to open config.json for reading."); // failed to open, abort
-        } else {
-          // successfully opened, proceed
-          StaticJsonDocument<500> config;
-
-          // Deserialize the JSON document
-          DeserializationError error = deserializeJson(config, file);
-          if (error) {
-            ws.textAll("Config error: unable to deserialize JSON.");
-          } else {
-            bigmotorSpeed   = config["motspeed"]  | BIG_MOTOR_HZ;
-            bigmotorOut     = config["speedout"]  | BIG_MOTOR_HZ;
-            bigmotorIn      = config["speedin"]   | BIG_MOTOR_HZ;
-            bigmotorAccel   = config["motaccel"]  | BIG_MOTOR_ACCEL;
-            lubeAmt         = config["lubeamt"]   | 200;
-            lubeFreq        = config["lubefreq"]  | 10;
-            smallmotorSpeed = config["lubespeed"] | SMALL_MOTOR_HZ;
-
-            initMotors = true; // activate some of the parameter changes
-            configLoaded = true; // set flag that we've loaded config successfuy
-            updateClient = true; // set flag to push update to clients
-
-            ws.textAll("Config file loaded.");
-          }
-
-          file.close(); // close file handle
-        }
+        loadConfig = true; // set flag
       }
 
       if (strcmp("runtest", cmd) == 0 ) { // positioning test on big motor
@@ -462,6 +442,11 @@ void runStepper(void * parameter) // task to handle motor related commands
           lubeFreq = dat;
         } else if (strcmp("update", cmd) == 0 ) {
           updateClient = true;
+        } else if (strcmp("inputs", cmd) == 0 ) {
+          uint8_t mySW1 = digitalRead(LIMIT_SW1);
+          uint8_t mySW2 = digitalRead(LIMIT_SW2);
+          uint8_t myESTOP = digitalRead(EMERGENCY_STOP_PIN);
+          ws.printfAll("SW1 %u pos %i SW2 %u pos %i eStop %u", mySW1, sw1Pos, mySW2, sw2Pos, myESTOP);
         } else if (strcmp("debugmot", cmd) == 0 ) {
           debugMotor = true;
         } else if (strcmp("motenabled", cmd) == 0 ) {
@@ -480,14 +465,16 @@ void runStepper(void * parameter) // task to handle motor related commands
             motEnabled = false;
           }
         } else if (strcmp("sw1", cmd) == 0 ) { // handle limit switch
-          if (runCal) {
+          if (runCal || autoStroke || updateDepth) {
+            if (runCal) runCal2 = true; // set flag for second stage calibration
             sw1Pos = big_motor->getCurrentPosition();
             big_motor->stopMove();
             sprintf(tmpBuffer.msgArray, "Triggered SW1 at %i", sw1Pos);
             xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
           }
         } else if (strcmp("sw2", cmd) == 0 ) { // handle limit switch
-          if (runCal) {
+          if (runCal || autoStroke || updateDepth) {
+            if (runCal) runCal = false; // stop calibration for now
             sw2Pos = big_motor->getCurrentPosition();
             big_motor->stopMove();
             sprintf(tmpBuffer.msgArray, "Triggered SW2 at %i", sw2Pos);
@@ -585,13 +572,49 @@ void runStepper(void * parameter) // task to handle motor related commands
 
     if (runCal && motEnabled) // calibrate positioning
     {
-      if (!runCal2) { // first calibration pass
-        if ((sw1Pos != 0) && (sw2Pos != 0)) {
-          big_motor->setSpeedInHz(60); // creeping speed
-          big_motor->setAcceleration(MAX_ACCEL); // maximum acceleration
-          big_motor->forceStopAndNewPosition(0); // force motor to stop, zero out position
-          big_motor->moveTo(9999); // move in one direction
-        } 
+      if (!runCal2) { // first calibration pass, find sw2 position
+        big_motor->setSpeedInHz(200); // creeping speed
+        big_motor->setAcceleration(MAX_ACCEL); // maximum acceleration
+        big_motor->setCurrentPosition(0); // zero out position
+        big_motor->moveTo(9999); // move in one direction
+      } else if (runCal2) { // second stage
+        big_motor->moveTo(-9999); // move in opposite direction
+      }
+    }
+
+    if (loadConfig) // load config settings from flash
+    {
+      loadConfig = false; // clear flag
+
+      File file = SPIFFS.open(configFile, "r"); // open file on SPIFFS
+    
+      if (!file) {
+        ws.textAll("Config error: failed to open config.json for reading."); // failed to open, abort
+      } else {
+        // successfully opened, proceed
+        StaticJsonDocument<500> config;
+
+        // Deserialize the JSON document
+        DeserializationError error = deserializeJson(config, file);
+        if (error) {
+          ws.textAll("Config error: unable to deserialize JSON.");
+        } else {
+          bigmotorSpeed   = config["motspeed"]  | BIG_MOTOR_HZ;
+          bigmotorOut     = config["speedout"]  | BIG_MOTOR_HZ;
+          bigmotorIn      = config["speedin"]   | BIG_MOTOR_HZ;
+          bigmotorAccel   = config["motaccel"]  | BIG_MOTOR_ACCEL;
+          lubeAmt         = config["lubeamt"]   | 200;
+          lubeFreq        = config["lubefreq"]  | 10;
+          smallmotorSpeed = config["lubespeed"] | SMALL_MOTOR_HZ;
+
+          initMotors = true; // activate some of the parameter changes
+          configLoaded = true; // set flag that we've loaded config successfuy
+          updateClient = true; // set flag to push update to clients
+
+          ws.textAll("Config file loaded.");
+        }
+
+        file.close(); // close file handle
       }
     }
 
@@ -828,6 +851,10 @@ void setup(){
   Serial.begin(115200);
   Serial.println("Booting");
 
+  // pinMode(LIMIT_SW1, INPUT_PULLUP);
+  // pinMode(LIMIT_SW2, INPUT_PULLUP);
+  // pinMode(EMERGENCY_STOP_PIN, INPUT);
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   while (WiFi.waitForConnectResult() != WL_CONNECTED) {
@@ -967,6 +994,7 @@ void setup(){
   syncSW2   = xSemaphoreCreateBinary();
   syncESTOP = xSemaphoreCreateBinary();
 
+#ifndef MOTOR_TEST
   xTaskCreatePinnedToCore(
     runStepper, /* Function to implement the task */
     "taskStepper", /* Name of the task */
@@ -975,8 +1003,9 @@ void setup(){
     0,  /* Priority of the task */
     &taskStepper,  /* Task handle. */
     0); /* Core where the task should run */
+#endif
 
-   xTaskCreatePinnedToCore(
+  xTaskCreatePinnedToCore(
      wsMsgtask, /* Function to implement the task */
      "taskMSG", /* Name of the task */
      5000,  /* Stack size in words */
@@ -985,7 +1014,7 @@ void setup(){
      &taskMSG,  /* Task handle. */
      1); /* Core where the task should run */
 
-    xTaskCreatePinnedToCore(
+   xTaskCreatePinnedToCore(
      watchSW1, /* Function to implement the task */
      "taskSW1", /* Name of the task */
      1000,  /* Stack size in words */
@@ -994,7 +1023,7 @@ void setup(){
      &taskSW1,  /* Task handle. */
      1); /* Core where the task should run */
 
-    xTaskCreatePinnedToCore(
+   xTaskCreatePinnedToCore(
      watchSW2, /* Function to implement the task */
      "taskSW2", /* Name of the task */
      1000,  /* Stack size in words */
@@ -1003,7 +1032,7 @@ void setup(){
      &taskSW2,  /* Task handle. */
      1); /* Core where the task should run */
 
-    xTaskCreatePinnedToCore(
+   xTaskCreatePinnedToCore(
      watchESTOP, /* Function to implement the task */
      "taskESTOP", /* Name of the task */
      1000,  /* Stack size in words */
@@ -1018,6 +1047,19 @@ void loop() // main task loop, used for housekeeping and ota
   ArduinoOTA.handle();
   ws.cleanupClients(); // clean up any disconnected clients
 
-  delay(10);
+  // if (digitalRead(LIMIT_SW1)) {
+  //   if (millis() - lastMs1 > 1000) {
+  //     ws.textAll("SW1 high");
+  //     lastMs1 = millis();
+  //   }
+  // }
+  // if (digitalRead(LIMIT_SW2)) {
+  //   if (millis() - lastMs2 > 1000) {
+  //     ws.textAll("SW2 high");
+  //     lastMs2 = millis();
+  //   }
+  // }
+
+  delay(50);
 }
 

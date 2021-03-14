@@ -62,7 +62,11 @@ ons.ready(function() {
               } else {
                 var myKey = dataMsg.substring(0,4);
                 if(myKey=="Exec" || myKey=="Prog") { // received program exec message
-                  progInfo('<ons-list-item class="program">'+dataMsg);
+                  if (dataMsg.indexOf("file")>0) { // make filenames tappable
+                    progInfo('<ons-list-item tappable modifier="longdivider" class="programfile">'+dataMsg);
+                  } else { // stuff that's not a filename
+                    progInfo('<ons-list-item modifier="longdivider" class="progrmsg">'+dataMsg);
+                  }
                 } else if(myKey=="Conf") { // received program exec message
                   configList('<ons-list-item class="config">'+dataMsg);
                 } else { // other message
@@ -89,7 +93,17 @@ ons.ready(function() {
   myTabbar.addEventListener("postchange", function(e){
     // alert("tab " + e.index);
 
-    // BUTTONS
+    // program list
+    $(document).on('click','#proginfo div', function(e){
+      var myText = $( this ).text();
+      // alert(myText);
+      if (myText.indexOf("file")>0) { // only handle program file names
+        var myProgname = myText.substring(myText.indexOf("/"));
+        document.getElementById("progname").value = myProgname;
+      }
+    });
+
+      // BUTTONS
     $('.button').unbind().click(function( event ){ // listen for button click
       var myId = $( this ).attr('id'); 
       var myMessage ={};
