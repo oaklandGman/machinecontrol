@@ -45,9 +45,6 @@ const unsigned int BIG_MOTOR_ACCEL   = 40000;
 const unsigned int SMALL_MOTOR_HZ    = 400;
 const unsigned int SMALL_MOTOR_ACCEL = 400; // infinite acceleration
 
-unsigned long lastMs1 = 0; // testing
-unsigned long lastMs2 = 0; // testing
-
 struct WSmsg // structure for msgpack messages to send/recv over websocket
 {
   uint8_t msgId;
@@ -243,6 +240,8 @@ void runStepper(void * parameter) // task to handle motor related commands
   bool bigmotorCal = false; // flag that automatica calibration is complete
   bool runCal = false; // automatic calibration phase 1
   bool runCal2 = false; // automatic calibration phase 2
+  bool calLoop = false; // flag indicating first cal looped (failed to hit limit sw)
+  bool calLoop2 = false; // flag indicating second cal looped (failed to hit limit sw)
   bool doDelay = false; // flag to trigger delay without motor motion
   bool updateClient = false; // flag to send parameters to ws clients
   bool initMotors = false; // flag to set stepper engine with config parameters
@@ -396,8 +395,8 @@ void runStepper(void * parameter) // task to handle motor related commands
       if (strcmp("runtest", cmd) == 0 ) { // positioning test on big motor
         if (dat == 1) { 
           runTest = true;
-          bigmotorSpeed = BIG_MOTOR_HZ;
-          bigmotorMove = 200;
+          // bigmotorSpeed = BIG_MOTOR_HZ;
+          // bigmotorMove = 200;
         } else {
           runTest = false;
         }
@@ -467,7 +466,9 @@ void runStepper(void * parameter) // task to handle motor related commands
           }
         } else if (strcmp("sw1", cmd) == 0 ) { // handle limit switch
           if (runCal || autoStroke || updateDepth) {
-            if (runCal) runCal2 = true; // set flag for second stage calibration
+            if (runCal) {
+              runCal2 = true; // set flag for second stage calibration
+            }
             sw1Pos = big_motor->getCurrentPosition();
             big_motor->stopMove();
             sprintf(tmpBuffer.msgArray, "Triggered SW1 at %i", sw1Pos);
@@ -573,13 +574,30 @@ void runStepper(void * parameter) // task to handle motor related commands
 
     if (runCal && motEnabled) // calibrate positioning
     {
-      if (!runCal2) { // first calibration pass, find sw2 position
-        big_motor->setSpeedInHz(200); // creeping speed
-        big_motor->setAcceleration(MAX_ACCEL); // maximum acceleration
-        big_motor->setCurrentPosition(0); // zero out position
-        big_motor->moveTo(9999); // move in one direction
-      } else if (runCal2) { // second stage
-        big_motor->moveTo(-9999); // move in opposite direction
+      if (!big_motor->isRunning()) {
+        if (!runCal2) { // first calibration pass, find sw2 position
+          if (!calLoop) { // first pass
+            calLoop = true; // set flag
+            big_motor->setSpeedInHz(200); // creeping speed
+            big_motor->setAcceleration(MAX_ACCEL); // maximum acceleration
+            big_motor->setCurrentPosition(0); // zero out position
+            ws.printfAll("Cal1 pos %i\n", big_motor->getCurrentPosition());
+            big_motor->moveTo(4000); // move in one direction
+          } else { // motor finished move without hitting limit
+            runCal = false; // clear flag
+            ws.textAll("Cal1 failed, did not trigger switch!");
+          }
+        } else { // second stage
+          if (!calLoop2) {
+            ws.printfAll("Cal2 pos %i", big_motor->getCurrentPosition());
+            big_motor->moveTo(-4000); // move in opposite direction
+            calLoop2 = true; // set flag
+            runCal = false;
+          } else {
+            runCal = false; // clear flag
+            ws.textAll("Cal2 failed, did not trigger switch!");
+          }
+        }
       }
     }
 
@@ -634,6 +652,20 @@ void runStepper(void * parameter) // task to handle motor related commands
     
     if (runTest) // run a self test on the big motor
     {
+#ifdef MOTOR_TEST
+  
+      if (big_motor->isRunning()) {
+        Serial.printf("currentpos %i target %i\n", big_motor->getCurrentPosition(), big_motor->targetPos());
+      } else {
+        if (bigmotorDir) {
+          big_motor->moveTo(-2000);
+          bigmotorDir = false;
+        } else {
+          big_motor->moveTo(2000);
+          bigmotorDir = true;
+        }
+      }
+#else
       if (!big_motor->isMotorRunning()) { // test to see if motor is done moving
         big_motor->setSpeedInHz(bigmotorSpeed);
         bigmotorDir = bigmotorDir ^ 1; // flip direction
@@ -656,6 +688,7 @@ void runStepper(void * parameter) // task to handle motor related commands
         xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
         // ws.printfAll("speed %u moving %i", bigmotorSpeed, localMove);
       } 
+#endif
     } // end of runtest
 
     if (listFiles) // send list of SPIFFs files to client
@@ -742,10 +775,9 @@ void runStepper(void * parameter) // task to handle motor related commands
       if (initComplete && motEnabled) { // check if motors are setup first
         updateDepth = false;
         if (big_motor->getCurrentPosition() >= bigmotorMove + bigmotorDepth) {
-          if (dualSpeed) big_motor->setSpeedInHz(bigmotorIn);
-          big_motor->moveTo(bigmotorDepth); // return to home position
-          sprintf(tmpBuffer.msgArray, "Stroke %u rep %u dual %i", strokeCnt, progRepCnt, dualSpeed);
-          xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // add message to the transmit queue     
+          if (dualSpeed) {
+            big_motor->setSpeedInHz(bigmotorIn);
+          }
           if (!big_motor->isRunning()) { // set motor parameters if it's not running
             big_motor->setAcceleration(bigmotorAccel); // update acceleration
           }
@@ -753,9 +785,14 @@ void runStepper(void * parameter) // task to handle motor related commands
             progRepCnt=0; // reset counter
             progNextStep=true; // flag next command
           }
+          big_motor->moveTo(bigmotorDepth); // return to home position
+          sprintf(tmpBuffer.msgArray, "Stroke %u rep %u dual %i", strokeCnt, progRepCnt, dualSpeed);
+          xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // add message to the transmit queue     
             // ws.printfAll("stroke %u complete", strokeCnt);
         } else if (big_motor->getCurrentPosition() <= bigmotorDepth) {
-          if (dualSpeed) big_motor->setSpeedInHz(bigmotorOut);
+          if (dualSpeed) {
+            big_motor->setSpeedInHz(bigmotorOut);
+          }
           big_motor->moveTo(bigmotorMove + bigmotorDepth); // move to extended position
           strokeCnt++; // increment stroke counter
           if ((strokeCnt >= lubeFreq) && (autoLube)) {
@@ -763,8 +800,10 @@ void runStepper(void * parameter) // task to handle motor related commands
             strokeCnt = 0; // reset counter
           }
         } else if (updateStroke) { // update to new longer stroke length
-          if (dualSpeed) big_motor->setSpeedInHz(bigmotorIn);
-          big_motor->moveTo(0); // move to home
+          if (dualSpeed) {
+            big_motor->setSpeedInHz(bigmotorIn);
+          }
+          big_motor->moveTo(bigmotorDepth); // move to depth
           updateStroke = false;
         }
       } else if (!initComplete && motEnabled) { // setup motors first
@@ -995,7 +1034,7 @@ void setup(){
   syncSW2   = xSemaphoreCreateBinary();
   syncESTOP = xSemaphoreCreateBinary();
 
-#ifndef MOTOR_TEST
+// #ifndef MOTOR_TEST
   xTaskCreatePinnedToCore(
     runStepper, /* Function to implement the task */
     "taskStepper", /* Name of the task */
@@ -1004,7 +1043,6 @@ void setup(){
     0,  /* Priority of the task */
     &taskStepper,  /* Task handle. */
     0); /* Core where the task should run */
-#endif
 
   xTaskCreatePinnedToCore(
      wsMsgtask, /* Function to implement the task */
@@ -1014,6 +1052,7 @@ void setup(){
      0,  /* Priority of the task */
      &taskMSG,  /* Task handle. */
      1); /* Core where the task should run */
+// #endif
 
    xTaskCreatePinnedToCore(
      watchSW1, /* Function to implement the task */
@@ -1041,6 +1080,8 @@ void setup(){
      0,  /* Priority of the task */
      &taskESTOP,  /* Task handle. */
      1); /* Core where the task should run */
+
+
 }
 
 void loop() // main task loop, used for housekeeping and ota
@@ -1048,18 +1089,6 @@ void loop() // main task loop, used for housekeeping and ota
   ArduinoOTA.handle();
   ws.cleanupClients(); // clean up any disconnected clients
 
-  // if (digitalRead(LIMIT_SW1)) {
-  //   if (millis() - lastMs1 > 1000) {
-  //     ws.textAll("SW1 high");
-  //     lastMs1 = millis();
-  //   }
-  // }
-  // if (digitalRead(LIMIT_SW2)) {
-  //   if (millis() - lastMs2 > 1000) {
-  //     ws.textAll("SW2 high");
-  //     lastMs2 = millis();
-  //   }
-  // }
 
   delay(50);
 }
