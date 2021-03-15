@@ -278,16 +278,10 @@ void runStepper(void * parameter) // task to handle motor related commands
   int delayMillis = 0; // milliseconds for delay
   int speedMax = 0; // max speed for auto increase routine
   int speedIncr = 0; // how much to increase speed each time
-  int speedStrokes = 0; // number of strokes between increases in speed
-  int speedStrokeCnt = 0; // counter for speed ramp rountine
-  int lengthStrokes = 0; // number of strokes between increases in length
-  int lengthStrokeCnt = 0; // counter for length ramp rountine
   int lengthMax = 0; // max length for auto increase routine
   int lengthIncr = 0; // how much to increase length each time
   int rndStrokes = 0; // number of strokes per random length roll
   int rndStrokeCnt = 0; // counter for random stroke routine
-  int speedRampCnt = 0; // counter for speed ramp routine
-  int lengthRampCnt = 0; // counter for length ramp routine
   
   int32_t sw1Pos = 0; // step count for limit switch 1
   int32_t sw2Pos = 0; // step count for limit switch 2
@@ -1079,7 +1073,7 @@ void setup(){
   xTaskCreatePinnedToCore(
     runStepper, /* Function to implement the task */
     "taskStepper", /* Name of the task */
-    5000,  /* Stack size in words */
+    6000,  /* Stack size in words */
     NULL,  /* Task input parameter */
     0,  /* Priority of the task */
     &taskStepper,  /* Task handle. */
