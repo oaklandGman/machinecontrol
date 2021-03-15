@@ -274,6 +274,7 @@ void runStepper(void * parameter) // task to handle motor related commands
   int bigmotorDepth = 0; // stroke depth (offset from 0)
   int localMove = 0; // used in selftest routine
   int smallmotorSpeed = SMALL_MOTOR_HZ; // speed of small motor
+  int smallmotorAccel = SMALL_MOTOR_HZ; // acceleration for small motor
   int lubeAmt = 400; // amount of lube dispensed per request
   int delayMillis = 0; // milliseconds for delay
   int speedMax = 0; // max speed for auto increase routine
@@ -385,6 +386,7 @@ void runStepper(void * parameter) // task to handle motor related commands
           config["lubeamt"]   = lubeAmt;
           config["lubefreq"]  = lubeFreq;
           config["lubespeed"] = smallmotorSpeed;
+          config["lubeaccel"] = smallmotorAccel;
 
           if (serializeJsonPretty(config, file) == 0) { // write contents to file
             ws.textAll("Config error: failed to write to config.json");
@@ -436,6 +438,12 @@ void runStepper(void * parameter) // task to handle motor related commands
           bigmotorDepth = dat;
           updateDepth = true;
           updateStroke = true;
+        } else if (strcmp("lubespeed", cmd) == 0 ) { // set small motor speed
+          small_motor->setSpeedInHz(dat); // update motor controller
+          smallmotorSpeed = dat; // update local var
+        } else if (strcmp("lubeaccel", cmd) == 0 ) { // set small motor acceleration
+          small_motor->setAcceleration(dat); // update motor controller
+          smallmotorAccel = dat; // update local var
         } else if (strcmp("speedout", cmd) == 0 ) { // command "speedout" 
           bigmotorOut = dat;
         } else if (strcmp("speedin", cmd) == 0 ) { // command "speedin" 
@@ -465,6 +473,7 @@ void runStepper(void * parameter) // task to handle motor related commands
             digitalWrite(BIG_MOTOR_SLEEP, HIGH); // enable motor driver
             digitalWrite(SMALL_MOTOR_SLEEP, HIGH); // enable motor driver
             motEnabled = true;
+            if (!initComplete) initMotors = true; // set flag to initialize motors for the first time
           }
           else {
             strcpy(tmpBuffer.msgArray, "Motors disabled.");
@@ -660,17 +669,18 @@ void runStepper(void * parameter) // task to handle motor related commands
       }
     }
 
-    if (initMotors)  // setup motors
+    if (initMotors && !initComplete)  // setup just once
     {
       initMotors = false;
       initComplete = true;
+      motEnabled = true; // enable motors
       big_motor->setSpeedInHz(bigmotorSpeed); // setup inital speed
       big_motor->setAcceleration(bigmotorAccel); // setup default acceleration
       small_motor->setSpeedInHz(smallmotorSpeed); // setup lube pump speed
-      small_motor->setAutoEnable(false); // auto enable lube pump driver
+      small_motor->setAcceleration(smallmotorAccel); // set acceleration
+      small_motor->setAutoEnable(true); // auto enable lube pump driver
       digitalWrite(BIG_MOTOR_SLEEP, HIGH); // enable driver
-      ws.textAll("Motors initialized.");
-      motEnabled = true; // enable motors
+      ws.textAll("Motor init complete.");
     }
     
     if (runTest) // run a self test on the big motor
@@ -738,10 +748,10 @@ void runStepper(void * parameter) // task to handle motor related commands
       updateClient = false;
 
       const char* mySwitches = "{\"switches\":{\"runtest\":%i,\"motenabled\":%i,\"autostroke\":%i,\"autolube\":%i,\"dualspeed\":%i}}";
-      const char* myConfig = "{\"speedin\":%u,\"speedout\":%u,\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i}";
+      const char* myConfig = "{\"speedin\":%u,\"speedout\":%u,\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i,\"lubespeed\":%u,\"lubeaccel\":%u}";
       // const char* myProg = "Program running %i step %u/%u";
 
-      sprintf(tmpBuffer.msgArray, myConfig, bigmotorIn, bigmotorOut, lubeFreq, lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, bigmotorMove);
+      sprintf(tmpBuffer.msgArray, myConfig, bigmotorIn, bigmotorOut, lubeFreq, lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, bigmotorMove, smallmotorSpeed, smallmotorAccel);
       xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
       
       sprintf(tmpBuffer.msgArray, mySwitches, runTest, motEnabled, autoStroke, autoLube, dualSpeed);
