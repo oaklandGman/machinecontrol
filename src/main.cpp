@@ -259,6 +259,9 @@ void runStepper(void * parameter) // task to handle motor related commands
   bool dualSpeed = false; // flag indicating different extend / retract speeds
   bool listFiles = false; // flag to send list of files to client
   bool loadConfig = true; // flag to load configuration on startup
+  bool rampSpeed = false; // flag to auto increase stroke speed
+  bool rampLength = false; // flag to auto increase stroke length
+  bool rndLength = false; // flag to auto randomize stroke length
 
   unsigned long previousMillis = 0; // last time on the clock
   unsigned long currentMillis = millis();
@@ -273,7 +276,19 @@ void runStepper(void * parameter) // task to handle motor related commands
   int smallmotorSpeed = SMALL_MOTOR_HZ; // speed of small motor
   int lubeAmt = 400; // amount of lube dispensed per request
   int delayMillis = 0; // milliseconds for delay
-
+  int speedMax = 0; // max speed for auto increase routine
+  int speedIncr = 0; // how much to increase speed each time
+  int speedStrokes = 0; // number of strokes between increases in speed
+  int speedStrokeCnt = 0; // counter for speed ramp rountine
+  int lengthStrokes = 0; // number of strokes between increases in length
+  int lengthStrokeCnt = 0; // counter for length ramp rountine
+  int lengthMax = 0; // max length for auto increase routine
+  int lengthIncr = 0; // how much to increase length each time
+  int rndStrokes = 0; // number of strokes per random length roll
+  int rndStrokeCnt = 0; // counter for random stroke routine
+  int speedRampCnt = 0; // counter for speed ramp routine
+  int lengthRampCnt = 0; // counter for length ramp routine
+  
   int32_t sw1Pos = 0; // step count for limit switch 1
   int32_t sw2Pos = 0; // step count for limit switch 2
 
@@ -520,9 +535,23 @@ void runStepper(void * parameter) // task to handle motor related commands
           lubeAmt = program[key]["lubeamt"];
           lubeFreq = program[key]["lubefreq"];
           autoLube = program[key]["autolube"];
+          speedMax = program[key]["speedmax"] | 0;
+          lengthMax = program[key]["lengthmax"] | 0;
+          rndLength = program[key]["rndlength"] | false;
           dualSpeed = program[key]["dualspeed"] | false;
           bigmotorOut = program[key]["speedout"] | bigmotorSpeed;
           bigmotorIn = program[key]["speedin"] | bigmotorSpeed;
+          if (speedMax > 0) { // enable speed ramping
+            rampSpeed = true; // set flag
+            speedIncr = (speedMax - bigmotorSpeed) / progReps; // divide delta speed by number of reps, amount to change speed on each stroke
+            dualSpeed = false; // dual speed not available if speed ramp feature used yet
+            bigmotorSpeed = bigmotorSpeed + speedIncr; // increase speed
+          }
+          if (lengthMax > 0) { // enable length ramping
+            rampLength = true;
+            lengthIncr = (lengthMax - bigmotorMove) / progReps; // divide delta length by number of reps, amount to increase stroke after each cycle
+            bigmotorMove = bigmotorMove + lengthIncr; // increase length
+          }
           big_motor->setSpeedInHz(bigmotorSpeed); // update speed 
           progPointer++; // increment program step pointer
         } else if (strcmp("depth", progFnc) == 0 ) { // set depth only
@@ -766,6 +795,11 @@ void runStepper(void * parameter) // task to handle motor related commands
       xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
     }
 
+    if (rndLength) // randomly set stroke length
+    {
+
+    }
+
     // if (big_motor->isMotorRunning()) {
     //   Serial.printf("Motor position %i\n", big_motor->getCurrentPosition());
     // }
@@ -786,12 +820,19 @@ void runStepper(void * parameter) // task to handle motor related commands
             progNextStep=true; // flag next command
           }
           big_motor->moveTo(bigmotorDepth); // return to home position
-          sprintf(tmpBuffer.msgArray, "Stroke %u rep %u dual %i", strokeCnt, progRepCnt, dualSpeed);
+          sprintf(tmpBuffer.msgArray, "Stroke %u rep %u speed %u", strokeCnt, progRepCnt, bigmotorSpeed);
           xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // add message to the transmit queue     
             // ws.printfAll("stroke %u complete", strokeCnt);
         } else if (big_motor->getCurrentPosition() <= bigmotorDepth) {
           if (dualSpeed) {
             big_motor->setSpeedInHz(bigmotorOut);
+          }
+          if (rampLength) {
+            bigmotorMove = bigmotorMove + lengthIncr; // increase length
+          }
+          if (rampSpeed) {
+            bigmotorSpeed = bigmotorSpeed + speedIncr; // increase speed
+            big_motor->setSpeedInHz(bigmotorSpeed);
           }
           big_motor->moveTo(bigmotorMove + bigmotorDepth); // move to extended position
           strokeCnt++; // increment stroke counter
