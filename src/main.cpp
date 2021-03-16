@@ -17,7 +17,7 @@ AsyncWebServer server(80); // listen on port 80
 AsyncWebSocket ws("/ws"); // websocket connections
 AsyncEventSource events("/events"); // not sure
 
-SPIClass SDSPI(HSPI); // use HSPI port for sd card
+SPIClass spi(HSPI); // use HSPI port for sd card
 
 #ifndef PASSWORD_SET
 const char* ssid = "xxxx";
@@ -949,14 +949,36 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
 
 void setup(){
   Serial.begin(115200);
-  Serial.println("Booting");
+  Serial.println("Starting up...");
 
-  SDSPI.begin(HSPI_CLK, HSPI_MISO, HSPI_MOSI, HSPI_CS); // assign HSPI port pins
-  SD.begin(SDSPI); // connect SD library to HSPI port
-  
-  // pinMode(LIMIT_SW1, INPUT_PULLUP);
-  // pinMode(LIMIT_SW2, INPUT_PULLUP);
-  // pinMode(EMERGENCY_STOP_PIN, INPUT);
+  spi.begin(HSPI_CLK, HSPI_MISO, HSPI_MOSI, HSPI_CS); // assign HSPI port pins
+  if (!SD.begin(HSPI_CS, spi, 80000000))  // connect SD library to use HSPI port, 80000000 bus freq
+  {
+    Serial.println("Card Mount Failed");
+    return;
+  } else {
+    Serial.println("SD Card Interface Initialized");
+  }
+  uint8_t cardType = SD.cardType();
+
+  if(cardType == CARD_NONE){
+      Serial.println("No SD card attached");
+      return;
+  }
+
+  Serial.print("SD Card Type: ");
+  if(cardType == CARD_MMC){
+      Serial.println("MMC");
+  } else if(cardType == CARD_SD){
+      Serial.println("SDSC");
+  } else if(cardType == CARD_SDHC){
+      Serial.println("SDHC");
+  } else {
+      Serial.println("UNKNOWN");
+  }
+
+  uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+  Serial.printf("SD Card Size: %lluMB\n", cardSize);
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
