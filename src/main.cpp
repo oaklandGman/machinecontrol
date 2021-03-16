@@ -5,15 +5,19 @@
 #include <FastAccelStepper.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
+#include <SPI.h>
+#include <SD.h>
 #include <SPIFFSEditor.h>
 #include "my_passwords.h"
 
 // comment this line out for normal operation
 // #define MOTOR_TEST 
 
-AsyncWebServer server(80);
-AsyncWebSocket ws("/ws");
-AsyncEventSource events("/events");
+AsyncWebServer server(80); // listen on port 80
+AsyncWebSocket ws("/ws"); // websocket connections
+AsyncEventSource events("/events"); // not sure
+
+SPIClass SDSPI(HSPI); // use HSPI port for sd card
 
 #ifndef PASSWORD_SET
 const char* ssid = "xxxx";
@@ -39,6 +43,14 @@ const bool SMALL_MOTOR_DIR_HI  = true; // drive not inverted, direction counts u
 const byte EMERGENCY_STOP_PIN  = 35;
 const byte LIMIT_SW1           = 33;
 const byte LIMIT_SW2           = 27;
+
+// HSPI PORT
+const byte HSPI_MISO  = 12;
+const byte HSPI_MOSI  = 13;
+const byte HSPI_CLK   = 14;
+const byte HSPI_CS    = 15;
+
+
 
 // Speed settings
 const unsigned int MAX_ACCEL         = 4294967295;
@@ -939,6 +951,9 @@ void setup(){
   Serial.begin(115200);
   Serial.println("Booting");
 
+  SDSPI.begin(HSPI_CLK, HSPI_MISO, HSPI_MOSI, HSPI_CS); // assign HSPI port pins
+  SD.begin(SDSPI); // connect SD library to HSPI port
+  
   // pinMode(LIMIT_SW1, INPUT_PULLUP);
   // pinMode(LIMIT_SW2, INPUT_PULLUP);
   // pinMode(EMERGENCY_STOP_PIN, INPUT);
