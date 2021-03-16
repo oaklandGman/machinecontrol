@@ -2,28 +2,29 @@
 
 little things:
 
-1. test limit switches
-2. finish auto calibrate
-3. update newly connected websocket client with running parameters
-    a. configurtion updates done
-    b. switch states updates done
-    c. maybe push updates on change?
-    d. maybe include limit switch states?
-4. save / load config file to flash
-    a. done
-5. get tabs working on client (status, configure, edit program)
-    a. tab template events working
-    b. icons working now use <http://zavoloklom.github.io/material-design-iconic-font/cheatsheet.html>
+Figure out limit switches
+    a. they sort of work, might be interference issue
+Finish auto calibrate routine
 
-big things:
+Done:
+save / load config file to flash
+get tabs working on client (status, configure)
+update newly connected websocket client with running parameters
+Program / script list is clickable
 
-1. figure out scripting method for programming (json?)
-    a. json scripting working, no easy client side editor yet
-    b. only very basic feature set implemented
-    c. added dual speed stroke mode!
-    d. added loop command
+
+Big things:
+
+1. interface for editing json scripts, although /edit works
 2. get micro-sd interface working
 3. save / load config file to sd card
 4. drop-down function selection (manual, auto, run program)
 5. move all hosted files over to sd card
 6. implement async wifimanager
+
+Done:
+Scripting method for scripts - using json
+    a. json scripting working, no easy client side editor yet
+    b. only very basic feature set implemented
+    c. added dual speed stroke mode!
+    d. added loop command
