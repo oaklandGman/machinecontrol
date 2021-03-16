@@ -28,15 +28,17 @@ const char* hostName = "machine"; // network hostname
 const byte DEBOUNCETIME = 100; // debounce time in millis 
 
 // IO pin assignments
-const byte BIG_MOTOR_STEP     = 19;
-const byte BIG_MOTOR_DIR      = 21;
-const byte BIG_MOTOR_SLEEP    = 22;
-const byte SMALL_MOTOR_STEP   = 25;
-const byte SMALL_MOTOR_DIR    = 23;
-const byte SMALL_MOTOR_SLEEP  = 26;
-const byte EMERGENCY_STOP_PIN = 35;
-const byte LIMIT_SW1          = 33;
-const byte LIMIT_SW2          = 27;
+const byte BIG_MOTOR_STEP      = 19;
+const byte BIG_MOTOR_DIR       = 21;
+const byte BIG_MOTOR_SLEEP     = 22;
+const bool BIG_MOTOR_DIR_HI    = true; // drive not inveerted, direction counts up
+const byte SMALL_MOTOR_STEP    = 25; // green
+const byte SMALL_MOTOR_DIR     = 23; // blue
+const byte SMALL_MOTOR_SLEEP   = 26; // brown
+const bool SMALL_MOTOR_DIR_HI  = true; // drive not inverted, direction counts up
+const byte EMERGENCY_STOP_PIN  = 35;
+const byte LIMIT_SW1           = 33;
+const byte LIMIT_SW2           = 27;
 
 // Speed settings
 const unsigned int MAX_ACCEL         = 4294967295;
@@ -250,7 +252,6 @@ void runStepper(void * parameter) // task to handle motor related commands
   bool updateDepth = false; // flag to update stroke depth number
   bool updateSpeed = false; // flag to update big motor speed
   bool updateStroke = false; // flag to upload big motor stroke length
-  bool configLoaded = false; // flag indicating config loaded
   bool progLoaded = false; // flag indicating program has been loaded
   bool progRunning = false; // flag indicating program is running
   bool progNextStep = false; // flag indicating program ready for next step
@@ -258,7 +259,6 @@ void runStepper(void * parameter) // task to handle motor related commands
   bool debugMotor = false; // flag to print diagnostics for big motor
   bool dualSpeed = false; // flag indicating different extend / retract speeds
   bool listFiles = false; // flag to send list of files to client
-  bool loadConfig = true; // flag to load configuration on startup
   bool rampSpeed = false; // flag to auto increase stroke speed
   bool rampLength = false; // flag to auto increase stroke length
   bool rndLength = false; // flag to auto randomize stroke length
@@ -266,18 +266,19 @@ void runStepper(void * parameter) // task to handle motor related commands
   unsigned long previousMillis = 0; // last time on the clock
   unsigned long currentMillis = millis();
 
-  int bigmotorSpeed = 400; // speed of big motor
-  int bigmotorOut = BIG_MOTOR_HZ; // extend speed
-  int bigmotorIn = BIG_MOTOR_HZ; // retract speed
-  int bigmotorAccel = BIG_MOTOR_ACCEL; // accelleration of big motor
+  unsigned int speedMax = 0; // max speed for auto increase routine
+  unsigned int bigmotorSpeed = 400; // speed of big motor
+  unsigned int bigmotorOut = BIG_MOTOR_HZ; // extend speed
+  unsigned int bigmotorIn = BIG_MOTOR_HZ; // retract speed
+  unsigned int bigmotorAccel = BIG_MOTOR_ACCEL; // accelleration of big motor
+  unsigned int smallmotorSpeed = SMALL_MOTOR_HZ; // speed of small motor
+  unsigned int smallmotorAccel = SMALL_MOTOR_ACCEL; // acceleration for small motor
+
   int bigmotorMove = 200; // stroke length
   int bigmotorDepth = 0; // stroke depth (offset from 0)
   int localMove = 0; // used in selftest routine
-  int smallmotorSpeed = SMALL_MOTOR_HZ; // speed of small motor
-  int smallmotorAccel = SMALL_MOTOR_HZ; // acceleration for small motor
   int lubeAmt = 400; // amount of lube dispensed per request
   int delayMillis = 0; // milliseconds for delay
-  int speedMax = 0; // max speed for auto increase routine
   int speedIncr = 0; // how much to increase speed each time
   int lengthMax = 0; // max length for auto increase routine
   int lengthIncr = 0; // how much to increase length each time
@@ -400,7 +401,36 @@ void runStepper(void * parameter) // task to handle motor related commands
 
       if (strcmp("loadconfig", cmd) == 0 ) // load motor parameters from json config file
       { 
-        loadConfig = true; // set flag
+        File file = SPIFFS.open(configFile, "r"); // open file on SPIFFS
+      
+        if (!file) {
+          ws.textAll("Config error: failed to open config.json for reading."); // failed to open, abort
+        } else {
+          // successfully opened, proceed
+          StaticJsonDocument<500> config;
+
+          // Deserialize the JSON document
+          DeserializationError error = deserializeJson(config, file);
+          if (error) {
+            ws.textAll("Config error: unable to deserialize JSON.");
+          } else {
+            bigmotorSpeed   = config["motspeed"]  | BIG_MOTOR_HZ;
+            bigmotorOut     = config["speedout"]  | BIG_MOTOR_HZ;
+            bigmotorIn      = config["speedin"]   | BIG_MOTOR_HZ;
+            bigmotorAccel   = config["motaccel"]  | BIG_MOTOR_ACCEL;
+            lubeAmt         = config["lubeamt"]   | 200;
+            lubeFreq        = config["lubefreq"]  | 10;
+            smallmotorSpeed = config["lubespeed"] | SMALL_MOTOR_HZ;
+            smallmotorAccel = config["lubeaccel"] | SMALL_MOTOR_ACCEL;
+
+            initMotors = true; // activate some of the parameter changes
+            updateClient = true; // set flag to push update to clients
+
+            ws.textAll("Config file loaded.");
+          }
+
+          file.close(); // close file handle
+        }
       }
 
       if (strcmp("runtest", cmd) == 0 ) { // positioning test on big motor
@@ -440,9 +470,11 @@ void runStepper(void * parameter) // task to handle motor related commands
           updateStroke = true;
         } else if (strcmp("lubespeed", cmd) == 0 ) { // set small motor speed
           small_motor->setSpeedInHz(dat); // update motor controller
+          small_motor->applySpeedAcceleration();
           smallmotorSpeed = dat; // update local var
         } else if (strcmp("lubeaccel", cmd) == 0 ) { // set small motor acceleration
           small_motor->setAcceleration(dat); // update motor controller
+          small_motor->applySpeedAcceleration();
           smallmotorAccel = dat; // update local var
         } else if (strcmp("speedout", cmd) == 0 ) { // command "speedout" 
           bigmotorOut = dat;
@@ -452,6 +484,8 @@ void runStepper(void * parameter) // task to handle motor related commands
           bigmotorSpeed = dat;
           updateSpeed = true;
         } else if (strcmp("motaccel", cmd) == 0 ) { 
+          big_motor->setAcceleration(bigmotorAccel);
+          big_motor->applySpeedAcceleration();
           bigmotorAccel = dat; // update big motor accelleration 
         } else if (strcmp("lubeamt", cmd) == 0 ) { 
           lubeAmt = dat; // update number of steps lube motor will run
@@ -471,7 +505,7 @@ void runStepper(void * parameter) // task to handle motor related commands
             strcpy(tmpBuffer.msgArray, "Motors enabled.");
             xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
             digitalWrite(BIG_MOTOR_SLEEP, HIGH); // enable motor driver
-            digitalWrite(SMALL_MOTOR_SLEEP, HIGH); // enable motor driver
+            // digitalWrite(SMALL_MOTOR_SLEEP, HIGH); // enable motor driver
             motEnabled = true;
             if (!initComplete) initMotors = true; // set flag to initialize motors for the first time
           }
@@ -479,7 +513,7 @@ void runStepper(void * parameter) // task to handle motor related commands
             strcpy(tmpBuffer.msgArray, "Motors disabled.");
             xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
             digitalWrite(BIG_MOTOR_SLEEP, LOW); // disable motor driver
-            digitalWrite(SMALL_MOTOR_SLEEP, LOW); // disable motor driver
+            // digitalWrite(SMALL_MOTOR_SLEEP, LOW); // disable motor driver
             motEnabled = false;
           }
         } else if (strcmp("sw1", cmd) == 0 ) { // handle limit switch
@@ -633,43 +667,7 @@ void runStepper(void * parameter) // task to handle motor related commands
       }
     }
 
-    if (loadConfig) // load config settings from flash
-    {
-      loadConfig = false; // clear flag
-
-      File file = SPIFFS.open(configFile, "r"); // open file on SPIFFS
-    
-      if (!file) {
-        ws.textAll("Config error: failed to open config.json for reading."); // failed to open, abort
-      } else {
-        // successfully opened, proceed
-        StaticJsonDocument<500> config;
-
-        // Deserialize the JSON document
-        DeserializationError error = deserializeJson(config, file);
-        if (error) {
-          ws.textAll("Config error: unable to deserialize JSON.");
-        } else {
-          bigmotorSpeed   = config["motspeed"]  | BIG_MOTOR_HZ;
-          bigmotorOut     = config["speedout"]  | BIG_MOTOR_HZ;
-          bigmotorIn      = config["speedin"]   | BIG_MOTOR_HZ;
-          bigmotorAccel   = config["motaccel"]  | BIG_MOTOR_ACCEL;
-          lubeAmt         = config["lubeamt"]   | 200;
-          lubeFreq        = config["lubefreq"]  | 10;
-          smallmotorSpeed = config["lubespeed"] | SMALL_MOTOR_HZ;
-
-          initMotors = true; // activate some of the parameter changes
-          configLoaded = true; // set flag that we've loaded config successfuy
-          updateClient = true; // set flag to push update to clients
-
-          ws.textAll("Config file loaded.");
-        }
-
-        file.close(); // close file handle
-      }
-    }
-
-    if (initMotors && !initComplete)  // setup just once
+     if (initMotors && !initComplete)  // setup just once
     {
       initMotors = false;
       initComplete = true;
@@ -679,7 +677,7 @@ void runStepper(void * parameter) // task to handle motor related commands
       small_motor->setSpeedInHz(smallmotorSpeed); // setup lube pump speed
       small_motor->setAcceleration(smallmotorAccel); // set acceleration
       small_motor->setAutoEnable(true); // auto enable lube pump driver
-      digitalWrite(BIG_MOTOR_SLEEP, HIGH); // enable driver
+      digitalWrite(BIG_MOTOR_SLEEP, HIGH); // enable driver on big motor
       ws.textAll("Motor init complete.");
     }
     
@@ -785,6 +783,7 @@ void runStepper(void * parameter) // task to handle motor related commands
     {
       updateDepth = false;
       if (progRunning) progNextStep = true; // set flag for next step as needed
+      big_motor->applySpeedAcceleration();
       big_motor->moveTo(bigmotorDepth);
       sprintf(tmpBuffer.msgArray, "Moving to depth: %i", bigmotorDepth);
       xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
@@ -795,6 +794,7 @@ void runStepper(void * parameter) // task to handle motor related commands
     {
       updateSpeed = false;
       big_motor->setSpeedInHz(bigmotorSpeed);
+      big_motor->applySpeedAcceleration();
       sprintf(tmpBuffer.msgArray, "Updated motor speed: %u", bigmotorSpeed);
       xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
     }
@@ -823,6 +823,7 @@ void runStepper(void * parameter) // task to handle motor related commands
             progRepCnt=0; // reset counter
             progNextStep=true; // flag next command
           }
+          big_motor->applySpeedAcceleration();
           big_motor->moveTo(bigmotorDepth); // return to home position
           sprintf(tmpBuffer.msgArray, "Stroke %u rep %u speed %u", strokeCnt, progRepCnt, bigmotorSpeed);
           xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // add message to the transmit queue     
@@ -838,6 +839,7 @@ void runStepper(void * parameter) // task to handle motor related commands
             bigmotorSpeed = bigmotorSpeed + speedIncr; // increase speed
             big_motor->setSpeedInHz(bigmotorSpeed);
           }
+          big_motor->applySpeedAcceleration();
           big_motor->moveTo(bigmotorMove + bigmotorDepth); // move to extended position
           strokeCnt++; // increment stroke counter
           if ((strokeCnt >= lubeFreq) && (autoLube)) {
@@ -848,6 +850,7 @@ void runStepper(void * parameter) // task to handle motor related commands
           if (dualSpeed) {
             big_motor->setSpeedInHz(bigmotorIn);
           }
+          big_motor->applySpeedAcceleration();
           big_motor->moveTo(bigmotorDepth); // move to depth
           updateStroke = false;
         }
@@ -1046,7 +1049,7 @@ void setup(){
   small_motor = engine.stepperConnectToPin(SMALL_MOTOR_STEP);
 
   if (big_motor) { // set up drive motor
-    big_motor->setDirectionPin(BIG_MOTOR_DIR, false); // inverted direction pin
+    big_motor->setDirectionPin(BIG_MOTOR_DIR, BIG_MOTOR_DIR_HI); // inverted direction pin
     big_motor->setEnablePin(BIG_MOTOR_SLEEP); 
     // big_motor->setAutoEnable(false); // will manually control sleep
 
@@ -1055,9 +1058,9 @@ void setup(){
   } 
 
   if (small_motor) { // set up small motor
-    small_motor->setDirectionPin(SMALL_MOTOR_DIR);
-    small_motor->setEnablePin(SMALL_MOTOR_SLEEP);
-    small_motor->setAutoEnable(false); // will manually control sleep
+    small_motor->setDirectionPin(SMALL_MOTOR_DIR, SMALL_MOTOR_DIR_HI);
+    small_motor->setEnablePin(SMALL_MOTOR_SLEEP, false);
+    small_motor->setAutoEnable(true); 
 
     small_motor->setSpeedInHz(SMALL_MOTOR_HZ);      
     small_motor->setAcceleration(SMALL_MOTOR_ACCEL);   
