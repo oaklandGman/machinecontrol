@@ -385,7 +385,7 @@ void runStepper(void * parameter) // task to handle motor related commands
 
       if (strcmp("saveconfig", cmd) == 0 ) // save motor parameters to json config file
       { 
-        File file = SSPIFFS.open(configFile, "w"); // open file on SPIFFS
+        File file = SPIFFS.open(configFile, "w"); // open file on SPIFFS
         if (!file) {
           ws.textAll("Config error: failed to open config.json for writing."); // failed to open, abort
         } else {
@@ -1052,13 +1052,13 @@ void setup(){
 
   server.addHandler(&events);
 
-  server.addHandler(new SPIFFSEditor(SD, http_username, http_password));
+  server.addHandler(new SPIFFSEditor(SPIFFS, http_username, http_password));
 
   server.on("/heap", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(200, "text/plain", String(ESP.getFreeHeap()));
   });
 
-  server.serveStatic("/", SD, "/").setDefaultFile("index.html");
+  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
 
   server.onNotFound([](AsyncWebServerRequest *request){
     // handle not found
