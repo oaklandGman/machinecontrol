@@ -1,0 +1,10 @@
+{
+  "motspeed": 600,
+  "speedout": 600,
+  "speedin": 600,
+  "motaccel": 40000,
+  "lubeamt": 400,
+  "lubefreq": 10,
+  "lubespeed": 1200,
+  "lubeaccel": 4000
+}

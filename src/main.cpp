@@ -339,7 +339,7 @@ void runStepper(void * parameter) // task to handle motor related commands
       {
         const char* filename = command.txt; // copy filename from buffer to local variable
         if (strlen(filename)>0) { // make sure we have a filename
-          File progFile = SPIFFS.open(filename, "r"); // open file on SPIFFS
+          File progFile = SD.open(filename, "r"); // open file on SPIFFS
         
           if (!progFile) {
             ws.printfAll("Program error: failed to open %s for reading.", filename); // failed to open, abort
@@ -385,7 +385,7 @@ void runStepper(void * parameter) // task to handle motor related commands
 
       if (strcmp("saveconfig", cmd) == 0 ) // save motor parameters to json config file
       { 
-        File file = SPIFFS.open(configFile, "w"); // open file on SPIFFS
+        File file = SD.open(configFile, "w"); // open file on SPIFFS
         if (!file) {
           ws.textAll("Config error: failed to open config.json for writing."); // failed to open, abort
         } else {
@@ -413,7 +413,7 @@ void runStepper(void * parameter) // task to handle motor related commands
 
       if (strcmp("loadconfig", cmd) == 0 ) // load motor parameters from json config file
       { 
-        File file = SPIFFS.open(configFile, "r"); // open file on SPIFFS
+        File file = SD.open(configFile, "r"); // open file on SPIFFS
       
         if (!file) {
           ws.textAll("Config error: failed to open config.json for reading."); // failed to open, abort
@@ -738,7 +738,7 @@ void runStepper(void * parameter) // task to handle motor related commands
     {
       listFiles = false; // clear flag
 
-      File root = SPIFFS.open("/");
+      File root = SD.open("/");
     
       File file = root.openNextFile();
     
@@ -948,14 +948,14 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
 }
 
 void setup(){
+  delay(1000);
   Serial.begin(115200);
-  Serial.println("Starting up...");
+  Serial.println("\nStarting up...");
 
   spi.begin(HSPI_CLK, HSPI_MISO, HSPI_MOSI, HSPI_CS); // assign HSPI port pins
-  if (!SD.begin(HSPI_CS, spi, 80000000))  // connect SD library to use HSPI port, 80000000 bus freq
+  if (!SD.begin(HSPI_CS, spi, 10000000))  // connect SD library to use HSPI port, 80000000 bus freq
   {
     Serial.println("Card Mount Failed");
-    return;
   } else {
     Serial.println("SD Card Interface Initialized");
   }
@@ -963,7 +963,6 @@ void setup(){
 
   if(cardType == CARD_NONE){
       Serial.println("No SD card attached");
-      return;
   }
 
   Serial.print("SD Card Type: ");
@@ -988,6 +987,9 @@ void setup(){
     ESP.restart();
     delay(5000);
   }
+
+  Serial.print("My IP address ");
+  Serial.println(WiFi.localIP());
 
   ArduinoOTA
     .onStart([]() {
@@ -1050,13 +1052,13 @@ void setup(){
 
   server.addHandler(&events);
 
-  server.addHandler(new SPIFFSEditor(SPIFFS, http_username, http_password));
+  server.addHandler(new SPIFFSEditor(SD, http_username, http_password));
 
   server.on("/heap", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(200, "text/plain", String(ESP.getFreeHeap()));
   });
 
-  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+  server.serveStatic("/", SD, "/").setDefaultFile("index.html");
 
   server.onNotFound([](AsyncWebServerRequest *request){
     // handle not found
@@ -1064,11 +1066,11 @@ void setup(){
   });
 
   server.onFileUpload([](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final){
-   // if(!index)
-      // Serial.printf("UploadStart: %s\n", filename.c_str());
-    // Serial.printf("%s", (const char*)data);
-    // if(final)
-      // Serial.printf("UploadEnd: %s (%u)\n", filename.c_str(), index+len);
+   if(!index)
+      Serial.printf("UploadStart: %s\n", filename.c_str());
+    Serial.printf("%s", (const char*)data);
+    if(final)
+      Serial.printf("UploadEnd: %s (%u)\n", filename.c_str(), index+len);
   });
 
   server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
