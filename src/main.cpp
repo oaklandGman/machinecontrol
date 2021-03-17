@@ -6,7 +6,7 @@
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
 #include <SPI.h>
-#include <SD.h>
+// #include <SD.h>
 #include <SPIFFSEditor.h>
 #include "my_passwords.h"
 
@@ -339,7 +339,7 @@ void runStepper(void * parameter) // task to handle motor related commands
       {
         const char* filename = command.txt; // copy filename from buffer to local variable
         if (strlen(filename)>0) { // make sure we have a filename
-          File progFile = SD.open(filename, "r"); // open file on SPIFFS
+          File progFile = SPIFFS.open(filename, "r"); // open file on SPIFFS
         
           if (!progFile) {
             ws.printfAll("Program error: failed to open %s for reading.", filename); // failed to open, abort
@@ -385,7 +385,7 @@ void runStepper(void * parameter) // task to handle motor related commands
 
       if (strcmp("saveconfig", cmd) == 0 ) // save motor parameters to json config file
       { 
-        File file = SD.open(configFile, "w"); // open file on SPIFFS
+        File file = SSPIFFS.open(configFile, "w"); // open file on SPIFFS
         if (!file) {
           ws.textAll("Config error: failed to open config.json for writing."); // failed to open, abort
         } else {
@@ -413,7 +413,7 @@ void runStepper(void * parameter) // task to handle motor related commands
 
       if (strcmp("loadconfig", cmd) == 0 ) // load motor parameters from json config file
       { 
-        File file = SD.open(configFile, "r"); // open file on SPIFFS
+        File file = SPIFFS.open(configFile, "r"); // open file on SPIFFS
       
         if (!file) {
           ws.textAll("Config error: failed to open config.json for reading."); // failed to open, abort
@@ -738,7 +738,7 @@ void runStepper(void * parameter) // task to handle motor related commands
     {
       listFiles = false; // clear flag
 
-      File root = SD.open("/");
+      File root = SPIFFS.open("/");
     
       File file = root.openNextFile();
     
@@ -952,32 +952,32 @@ void setup(){
   Serial.begin(115200);
   Serial.println("\nStarting up...");
 
-  spi.begin(HSPI_CLK, HSPI_MISO, HSPI_MOSI, HSPI_CS); // assign HSPI port pins
-  if (!SD.begin(HSPI_CS, spi, 10000000))  // connect SD library to use HSPI port, 80000000 bus freq
-  {
-    Serial.println("Card Mount Failed");
-  } else {
-    Serial.println("SD Card Interface Initialized");
-  }
-  uint8_t cardType = SD.cardType();
+  // spi.begin(HSPI_CLK, HSPI_MISO, HSPI_MOSI, HSPI_CS); // assign HSPI port pins
+  // if (!SD.begin(HSPI_CS, spi, 10000000, "/sd", 40))  // connect SD library to use HSPI port, 80000000 bus freq
+  // {
+  //   Serial.println("Card Mount Failed");
+  // } else {
+  //   Serial.println("SD Card Interface Initialized");
+  // }
+  // uint8_t cardType = SD.cardType();
 
-  if(cardType == CARD_NONE){
-      Serial.println("No SD card attached");
-  }
+  // if(cardType == CARD_NONE){
+  //     Serial.println("No SD card attached");
+  // }
 
-  Serial.print("SD Card Type: ");
-  if(cardType == CARD_MMC){
-      Serial.println("MMC");
-  } else if(cardType == CARD_SD){
-      Serial.println("SDSC");
-  } else if(cardType == CARD_SDHC){
-      Serial.println("SDHC");
-  } else {
-      Serial.println("UNKNOWN");
-  }
+  // Serial.print("SD Card Type: ");
+  // if(cardType == CARD_MMC){
+  //     Serial.println("MMC");
+  // } else if(cardType == CARD_SD){
+  //     Serial.println("SDSC");
+  // } else if(cardType == CARD_SDHC){
+  //     Serial.println("SDHC");
+  // } else {
+  //     Serial.println("UNKNOWN");
+  // }
 
-  uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-  Serial.printf("SD Card Size: %lluMB\n", cardSize);
+  // uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+  // Serial.printf("SD Card Size: %lluMB\n", cardSize);
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
