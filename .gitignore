@@ -4,5 +4,4 @@
 .vscode/launch.json
 .vscode/ipch
 include/my_passwords.h
-data/js
 data/css
