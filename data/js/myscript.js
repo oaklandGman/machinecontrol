@@ -3,6 +3,24 @@ ons.ready(function() {
   var socket;
   /*The user has WebSockets!!! */
 
+  try{
+    let acl = new Accelerometer({frequency: 60});
+    acl.addEventListener('reading', () => {
+      document.getElementById("x_axis").value = acl.x;
+      document.getElementById("y_axis").value = acl.y;
+      document.getElementById("z_axis").value = acl.z;
+      // console.log("Acceleration along the X-axis " + acl.x);
+      // console.log("Acceleration along the Y-axis " + acl.y);
+      // console.log("Acceleration along the Z-axis " + acl.z);
+    });
+
+    acl.start();
+  }
+  catch(e){
+    alert("Accelerometer error " + e);
+  }
+  
+
   document.addEventListener('prechange', function(event) {
     document.querySelector('ons-toolbar .center')
       .innerHTML = event.tabItem.getAttribute('label');
