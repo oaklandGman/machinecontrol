@@ -20,6 +20,7 @@
       <ons-tab page="configtab.html" label="Configuration" icon="md-settings"></ons-tab>
       <ons-tab page="autotab.html" label="Automation" icon="md-run"></ons-tab>
       <ons-tab page="program.html" label="Program" icon="md-format-list-bulleted"></ons-tab>
+      <ons-tab page="motion.html" label="Motion" icon="md-run"></ons-tab>
     </ons-tabbar>
 
     <ons-bottom-toolbar>
@@ -98,6 +99,38 @@
         <ons-button id="inputs" class="button" modifier="large">Debug Inputs</ons-button>
       </section>
       <section style="padding: 8px;">
+        <ons-list id="diagList"></ons-list>
+      </section>
+    </ons-page>
+  </template>
+
+  <template id="program.html">
+    <ons-page id="program">
+      <section style="padding: 8px; padding-top: 16px;">
+        <ons-input id="progname" maxlength="30" placeholder="Program Name" float type="text" style="width: 100%;" modifier="underbar"></ons-input>
+        <p></p>
+        <ons-button id="listfiles" class="button" modifier="large">List Programs</ons-button>
+        <p></p>
+        <ons-button id="loadprog" class="button" modifier="large">Load Program</ons-button>
+        <p></p>
+        <ons-button id="execprog" class="button" modifier="large">Execute Program</ons-button>
+        <p></p>
+        <ons-button id="stopprog" class="button" modifier="large">Stop Program</ons-button>
+      </section>
+      <section style="padding: 8px;">
+        <ons-list id="proginfo"></ons-list>
+      </section>
+    </ons-page>
+  </template>
+
+  <template id="motion.html">
+    <ons-page id="motion">
+      <section style="padding: 8px; padding-top: 16px;">
+        <ons-button id="accstartstop" class="button" modifier="large">Start Reading</ons-button>
+        <p></p>
+        <ons-button id="connectcontrol" class="button" disabled modifier="large">Connect Controller</ons-button>
+      </section>
+      <section id="sliderbox" style="padding: 8px;">
         <ons-row>
           <ons-col width="40px" style="text-align: center; line-height: 31px;">
             <ons-icon icon="md-volume-down"></ons-icon>
@@ -131,28 +164,6 @@
             <ons-icon icon="md-thumb-up"></ons-icon>
           </ons-col>
         </ons-row>    
-      </section>
-      <section style="padding: 8px;">
-        <ons-list id="diagList"></ons-list>
-      </section>
-    </ons-page>
-  </template>
-
-  <template id="program.html">
-    <ons-page id="program">
-      <section style="padding: 8px; padding-top: 16px;">
-        <ons-input id="progname" maxlength="30" placeholder="Program Name" float type="text" style="width: 100%;" modifier="underbar"></ons-input>
-        <p></p>
-        <ons-button id="listfiles" class="button" modifier="large">List Programs</ons-button>
-        <p></p>
-        <ons-button id="loadprog" class="button" modifier="large">Load Program</ons-button>
-        <p></p>
-        <ons-button id="execprog" class="button" modifier="large">Execute Program</ons-button>
-        <p></p>
-        <ons-button id="stopprog" class="button" modifier="large">Stop Program</ons-button>
-      </section>
-      <section style="padding: 8px;">
-        <ons-list id="proginfo"></ons-list>
       </section>
     </ons-page>
   </template>

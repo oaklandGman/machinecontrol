@@ -22,7 +22,7 @@ SPIClass spi(HSPI); // use HSPI port for sd card
 #ifndef PASSWORD_SET
 const char* ssid = "xxxx";
 const char* password = "xxxx";
-const char* http_username = "xxxx";
+const char* http_username = "xxxx"; // for SPIFFSEDIT library
 const char* http_password = "xxxx";
 #endif
 
@@ -32,25 +32,23 @@ const char* hostName = "machine"; // network hostname
 const byte DEBOUNCETIME = 100; // debounce time in millis 
 
 // IO pin assignments
-const byte BIG_MOTOR_STEP      = 19;
-const byte BIG_MOTOR_DIR       = 21;
-const byte BIG_MOTOR_SLEEP     = 22;
+const uint8_t BIG_MOTOR_STEP      = 19;
+const uint8_t BIG_MOTOR_DIR       = 21;
+const uint8_t BIG_MOTOR_SLEEP     = 22;
 const bool BIG_MOTOR_DIR_HI    = true; // drive not inveerted, direction counts up
-const byte SMALL_MOTOR_STEP    = 25; // green
-const byte SMALL_MOTOR_DIR     = 23; // blue
-const byte SMALL_MOTOR_SLEEP   = 26; // brown
+const uint8_t SMALL_MOTOR_STEP    = 25; // green
+const uint8_t SMALL_MOTOR_DIR     = 23; // blue
+const uint8_t SMALL_MOTOR_SLEEP   = 26; // brown
 const bool SMALL_MOTOR_DIR_HI  = true; // drive not inverted, direction counts up
-const byte EMERGENCY_STOP_PIN  = 35;
-const byte LIMIT_SW1           = 33;
-const byte LIMIT_SW2           = 27;
+const uint8_t EMERGENCY_STOP_PIN  = 35;
+const uint8_t LIMIT_SW1           = 33;
+const uint8_t LIMIT_SW2           = 27;
 
 // HSPI PORT
-const byte HSPI_MISO  = 12;
-const byte HSPI_MOSI  = 13;
-const byte HSPI_CLK   = 14;
-const byte HSPI_CS    = 15;
-
-
+const uint8_t HSPI_MISO  = 12;
+const uint8_t HSPI_MOSI  = 13;
+const uint8_t HSPI_CLK   = 14;
+const uint8_t HSPI_CS    = 15;
 
 // Speed settings
 const unsigned int MAX_ACCEL         = 4294967295;
@@ -274,10 +272,16 @@ void runStepper(void * parameter) // task to handle motor related commands
   bool rampSpeed = false; // flag to auto increase stroke speed
   bool rampLength = false; // flag to auto increase stroke length
   bool rndLength = false; // flag to auto randomize stroke length
+  bool sw1Trip = false; // flag for limit switch 1
+  bool sw2Trip = false; // flag for limit switch 2
+  bool eStopTrip = false; // flag for estop switch
 
   unsigned long previousMillis = 0; // last time on the clock
   unsigned long currentMillis = millis();
-
+  unsigned long sw1Last = currentMillis;
+  unsigned long sw2Last = currentMillis;
+  unsigned long eStopLast = currentMillis;
+  
   unsigned int speedMax = 0; // max speed for auto increase routine
   unsigned int bigmotorSpeed = 400; // speed of big motor
   unsigned int bigmotorOut = BIG_MOTOR_HZ; // extend speed
@@ -300,13 +304,18 @@ void runStepper(void * parameter) // task to handle motor related commands
   int32_t sw1Pos = 0; // step count for limit switch 1
   int32_t sw2Pos = 0; // step count for limit switch 2
 
-  uint8_t strokeCnt   = 0; // number of strokes since last lube
-  uint8_t lubeFreq    = 10; // number of strokes between lube
-  uint8_t progPointer = 0; // where are we at in the program
-  uint8_t progReps    = 0; // number of reps for current program command
-  uint8_t progRepCnt  = 0; // counter for number of reps completed
-  uint8_t progSteps   = 0; // number of steps in program
-  uint8_t progLoopCnt = 0; // number of times program has looped
+  uint8_t strokeCnt    = 0; // number of strokes since last lube
+  uint8_t lubeFreq     = 10; // number of strokes between lube
+  uint8_t progPointer  = 0; // where are we at in the program
+  uint8_t progReps     = 0; // number of reps for current program command
+  uint8_t progRepCnt   = 0; // counter for number of reps completed
+  uint8_t progSteps    = 0; // number of steps in program
+  uint8_t progLoopCnt  = 0; // number of times program has looped
+  uint8_t sw1LastRead  = 0; // record last state of sw1
+  uint8_t sw2LastRead  = 0; // last state of sw2
+  uint8_t sw1Read      = 0; // reading from sw1
+  uint8_t sw2Read      = 0; // reading from sw2
+
 
   const char* configFile = "/config.json";
 
@@ -317,6 +326,62 @@ void runStepper(void * parameter) // task to handle motor related commands
   for (;;) { 
     currentMillis = millis(); // update current count on clock
 
+    sw1Read = digitalRead(LIMIT_SW1); // read switch 1
+
+    if (sw1Read == 1) // switch reads high
+    {
+      if (currentMillis - sw1Last > DEBOUNCETIME) {  
+        sw1Trip = true; // input triggered
+      }
+      sw1Last = currentMillis; // save the timestamp
+      sw1LastRead = sw1Read; // save the state
+    }
+
+    sw2Read = digitalRead(LIMIT_SW2); // read switch 2
+
+    if (sw2Read == 1) // switch reads high
+    {
+      // sw2Trip = true;// input triggered
+      if (currentMillis - sw2Last > DEBOUNCETIME) {  
+        sw2Trip = true; // input triggered
+      }
+      sw2Last = currentMillis;
+      sw2LastRead = sw2Read;
+    }
+    
+    if (eStopTrip) { 
+      // handle estop
+    }
+
+    if (sw1Trip) // handle limit switches
+    { 
+      if (runCal || autoStroke || updateDepth) {
+        if (runCal) {
+          runCal2 = true; // set flag for second stage calibration
+          big_motor->stopMove();
+        }
+      }
+      sw1Pos = big_motor->getCurrentPosition();
+      // ws.printfAll("Triggered SW1 at %i", sw1Pos);
+
+      // sprintf(tmpBuffer.msgArray, "Triggered SW1 %i at %i", sw1Read, sw1Pos);
+      // xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+      sw1Trip = false;
+    }
+
+    if (sw2Trip) { // handle limit switch
+      if (runCal || autoStroke || updateDepth) {
+        if (runCal) {
+          runCal = false; // stop calibration for now
+          big_motor->stopMove();
+        }
+      }
+      sw2Pos = big_motor->getCurrentPosition();
+      // sprintf(tmpBuffer.msgArray, "Triggered SW2 %i at %i", sw2Read, sw2Pos);
+      // xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+      sw2Trip = false;
+    }
+
     if (uxQueueMessagesWaiting(motQueue)) // check queue for new WS commands
     {
       // queue not empty, grab a message and process it
@@ -326,10 +391,6 @@ void runStepper(void * parameter) // task to handle motor related commands
       int dat = command.dat; // copy data from buffer to local variable
       
       ws.printfAll("Received command %s data %i", cmd, dat); // print debug message
-
-      if (strcmp("estop", cmd) == 0 ) { 
-        // handle estop
-      }
 
       if (strcmp("listfiles", cmd) == 0 ) { // set flag to send file list to client
         listFiles = true;
@@ -528,28 +589,10 @@ void runStepper(void * parameter) // task to handle motor related commands
             // digitalWrite(SMALL_MOTOR_SLEEP, LOW); // disable motor driver
             motEnabled = false;
           }
-        } else if (strcmp("sw1", cmd) == 0 ) { // handle limit switch
-          if (runCal || autoStroke || updateDepth) {
-            if (runCal) {
-              runCal2 = true; // set flag for second stage calibration
-            }
-            sw1Pos = big_motor->getCurrentPosition();
-            big_motor->stopMove();
-            sprintf(tmpBuffer.msgArray, "Triggered SW1 at %i", sw1Pos);
-            xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
-          }
-        } else if (strcmp("sw2", cmd) == 0 ) { // handle limit switch
-          if (runCal || autoStroke || updateDepth) {
-            if (runCal) runCal = false; // stop calibration for now
-            sw2Pos = big_motor->getCurrentPosition();
-            big_motor->stopMove();
-            sprintf(tmpBuffer.msgArray, "Triggered SW2 at %i", sw2Pos);
-            xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
-          }
-        }
+        } 
       }
     } // end message queue check
-    
+
     if (progRunning && progNextStep) // process JSON program commands
     {
       progNextStep = false; // clear flag, we're not ready for next step
@@ -1141,32 +1184,32 @@ void setup(){
      1); /* Core where the task should run */
 // #endif
 
-   xTaskCreatePinnedToCore(
-     watchSW1, /* Function to implement the task */
-     "taskSW1", /* Name of the task */
-     1000,  /* Stack size in words */
-     NULL,  /* Task input parameter */
-     0,  /* Priority of the task */
-     &taskSW1,  /* Task handle. */
-     1); /* Core where the task should run */
+  //  xTaskCreatePinnedToCore(
+  //    watchSW1, /* Function to implement the task */
+  //    "taskSW1", /* Name of the task */
+  //    1000,  /* Stack size in words */
+  //    NULL,  /* Task input parameter */
+  //    0,  /* Priority of the task */
+  //    &taskSW1,  /* Task handle. */
+  //    1); /* Core where the task should run */
 
-   xTaskCreatePinnedToCore(
-     watchSW2, /* Function to implement the task */
-     "taskSW2", /* Name of the task */
-     1000,  /* Stack size in words */
-     NULL,  /* Task input parameter */
-     0,  /* Priority of the task */
-     &taskSW2,  /* Task handle. */
-     1); /* Core where the task should run */
+  //  xTaskCreatePinnedToCore(
+  //    watchSW2, /* Function to implement the task */
+  //    "taskSW2", /* Name of the task */
+  //    1000,  /* Stack size in words */
+  //    NULL,  /* Task input parameter */
+  //    0,  /* Priority of the task */
+  //    &taskSW2,  /* Task handle. */
+  //    1); /* Core where the task should run */
 
-   xTaskCreatePinnedToCore(
-     watchESTOP, /* Function to implement the task */
-     "taskESTOP", /* Name of the task */
-     1000,  /* Stack size in words */
-     NULL,  /* Task input parameter */
-     0,  /* Priority of the task */
-     &taskESTOP,  /* Task handle. */
-     1); /* Core where the task should run */
+  //  xTaskCreatePinnedToCore(
+  //    watchESTOP, /* Function to implement the task */
+  //    "taskESTOP", /* Name of the task */
+  //    1000,  /* Stack size in words */
+  //    NULL,  /* Task input parameter */
+  //    0,  /* Priority of the task */
+  //    &taskESTOP,  /* Task handle. */
+  //    1); /* Core where the task should run */
 
 
 }
