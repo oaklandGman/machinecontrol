@@ -244,7 +244,7 @@ void runStepper(void * parameter) // task to handle motor related commands
 {
   DynamicJsonDocument program(3072); // setup memory for big json program data
 
-  bool runTest = false; // flag for motor self test routine
+  bool motSleep = true; // flag to disable stepper if idle for 10 minutes
   bool bigmotorDir = false; // flag used for motor direction reversal in self test
   bool autoLube = false; // automatically dispense lubrication
   bool autoStroke = false; // automatically cycle motor
@@ -278,15 +278,16 @@ void runStepper(void * parameter) // task to handle motor related commands
 
   unsigned long previousMillis = 0; // last time on the clock
   unsigned long currentMillis = millis();
-  unsigned long sw1Last = currentMillis;
-  unsigned long sw2Last = currentMillis;
-  unsigned long eStopLast = currentMillis;
+  unsigned long sw1Last       = currentMillis;
+  unsigned long sw2Last       = currentMillis;
+  unsigned long motLast       = currentMillis;
+  unsigned long eStopLast     = currentMillis;
   
-  unsigned int speedMax = 0; // max speed for auto increase routine
-  unsigned int bigmotorSpeed = 400; // speed of big motor
-  unsigned int bigmotorOut = BIG_MOTOR_HZ; // extend speed
-  unsigned int bigmotorIn = BIG_MOTOR_HZ; // retract speed
-  unsigned int bigmotorAccel = BIG_MOTOR_ACCEL; // accelleration of big motor
+  unsigned int speedMax        = 0; // max speed for auto increase routine
+  unsigned int bigmotorSpeed   = 400; // speed of big motor
+  unsigned int bigmotorOut     = BIG_MOTOR_HZ; // extend speed
+  unsigned int bigmotorIn      = BIG_MOTOR_HZ; // retract speed
+  unsigned int bigmotorAccel   = BIG_MOTOR_ACCEL; // accelleration of big motor
   unsigned int smallmotorSpeed = SMALL_MOTOR_HZ; // speed of small motor
   unsigned int smallmotorAccel = SMALL_MOTOR_ACCEL; // acceleration for small motor
 
@@ -317,6 +318,7 @@ void runStepper(void * parameter) // task to handle motor related commands
   uint8_t sw2Read      = 0; // reading from sw2
 
 
+  const unsigned long motSleepTime = (1000 * 60 * 10); // 15 minutes
   const char* configFile = "/config.json";
 
   struct MOTcmd command; // buffer for incoming commands
@@ -506,91 +508,85 @@ void runStepper(void * parameter) // task to handle motor related commands
         }
       }
 
-      if (strcmp("runtest", cmd) == 0 ) { // positioning test on big motor
+      if (strcmp("motsleep", cmd) == 0 ) { // positioning test on big motor
         if (dat == 1) { 
-          runTest = true;
-          // bigmotorSpeed = BIG_MOTOR_HZ;
-          // bigmotorMove = 200;
+          motSleep = true;
         } else {
-          runTest = false;
+          motSleep = false;
         }
-      }
-
-      if (runTest == false) { // motortest disables all other commands
-        if (strcmp("autostroke", cmd) == 0 ) { // command "autostroke"
-          if (dat == 1) {
-            strokeCnt = 0;
-            autoStroke = true;
-          } else {
-            autoStroke = false;
-          }
-        } else if (strcmp("autolube", cmd) == 0 ) { // command "autolube"
-          if (dat == 1) autoLube = true;
-          else autoLube = false;
-        } else if (strcmp("shootlube", cmd) == 0 ) { // command "shootlube" 
-          shootLube = true;
-        } else if (strcmp("dualspeed", cmd) == 0 ) { // command "dualspeed" 
-          if (dat == 1) dualSpeed = true;
-          else dualSpeed = false;
-        } else if (strcmp("calibrate", cmd) == 0 ) { // command "calibrate" 
-          runCal = true;
-        } else if (strcmp("strokelen", cmd) == 0 ) { // command "strokelen"
-          bigmotorMove = dat;
-          updateStroke = true;
-        } else if (strcmp("strokedep", cmd) == 0 ) { // command "strokedep" 
-          bigmotorDepth = dat;
-          updateDepth = true;
-          updateStroke = true;
-        } else if (strcmp("lubespeed", cmd) == 0 ) { // set small motor speed
-          small_motor->setSpeedInHz(dat); // update motor controller
-          small_motor->applySpeedAcceleration();
-          smallmotorSpeed = dat; // update local var
-        } else if (strcmp("lubeaccel", cmd) == 0 ) { // set small motor acceleration
-          small_motor->setAcceleration(dat); // update motor controller
-          small_motor->applySpeedAcceleration();
-          smallmotorAccel = dat; // update local var
-        } else if (strcmp("speedout", cmd) == 0 ) { // command "speedout" 
-          bigmotorOut = dat;
-        } else if (strcmp("speedin", cmd) == 0 ) { // command "speedin" 
-          bigmotorIn = dat;
-        } else if (strcmp("motspeed", cmd) == 0 ) { // command "motspeed" 
-          bigmotorSpeed = dat;
-          updateSpeed = true;
-        } else if (strcmp("motaccel", cmd) == 0 ) { 
-          big_motor->setAcceleration(bigmotorAccel);
-          big_motor->applySpeedAcceleration();
-          bigmotorAccel = dat; // update big motor accelleration 
-        } else if (strcmp("lubeamt", cmd) == 0 ) { 
-          lubeAmt = dat; // update number of steps lube motor will run
-        } else if (strcmp("lubefreq", cmd) == 0 ) {
-          lubeFreq = dat;
-        } else if (strcmp("update", cmd) == 0 ) {
-          updateClient = true;
-        } else if (strcmp("inputs", cmd) == 0 ) {
-          uint8_t mySW1 = digitalRead(LIMIT_SW1);
-          uint8_t mySW2 = digitalRead(LIMIT_SW2);
-          uint8_t myESTOP = digitalRead(EMERGENCY_STOP_PIN);
-          ws.printfAll("SW1 %u pos %i SW2 %u pos %i eStop %u", mySW1, sw1Pos, mySW2, sw2Pos, myESTOP);
-        } else if (strcmp("debugmot", cmd) == 0 ) {
-          debugMotor = true;
-        } else if (strcmp("motenabled", cmd) == 0 ) {
-          if (dat == 1) {
-            strcpy(tmpBuffer.msgArray, "Motors enabled.");
-            xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
-            digitalWrite(BIG_MOTOR_SLEEP, HIGH); // enable motor driver
-            // digitalWrite(SMALL_MOTOR_SLEEP, HIGH); // enable motor driver
-            motEnabled = true;
-            if (!initComplete) initMotors = true; // set flag to initialize motors for the first time
-          }
-          else {
-            strcpy(tmpBuffer.msgArray, "Motors disabled.");
-            xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
-            digitalWrite(BIG_MOTOR_SLEEP, LOW); // disable motor driver
-            // digitalWrite(SMALL_MOTOR_SLEEP, LOW); // disable motor driver
-            motEnabled = false;
-          }
-        } 
-      }
+      } else if (strcmp("autostroke", cmd) == 0 ) { // command "autostroke"
+        if (dat == 1) {
+          strokeCnt = 0;
+          autoStroke = true;
+        } else {
+          autoStroke = false;
+        }
+      } else if (strcmp("autolube", cmd) == 0 ) { // command "autolube"
+        if (dat == 1) autoLube = true;
+        else autoLube = false;
+      } else if (strcmp("shootlube", cmd) == 0 ) { // command "shootlube" 
+        shootLube = true;
+      } else if (strcmp("dualspeed", cmd) == 0 ) { // command "dualspeed" 
+        if (dat == 1) dualSpeed = true;
+        else dualSpeed = false;
+      } else if (strcmp("calibrate", cmd) == 0 ) { // command "calibrate" 
+        runCal = true;
+      } else if (strcmp("strokelen", cmd) == 0 ) { // command "strokelen"
+        bigmotorMove = dat;
+        updateStroke = true;
+      } else if (strcmp("strokedep", cmd) == 0 ) { // command "strokedep" 
+        bigmotorDepth = dat;
+        updateDepth = true;
+        updateStroke = true;
+      } else if (strcmp("lubespeed", cmd) == 0 ) { // set small motor speed
+        small_motor->setSpeedInHz(dat); // update motor controller
+        small_motor->applySpeedAcceleration();
+        smallmotorSpeed = dat; // update local var
+      } else if (strcmp("lubeaccel", cmd) == 0 ) { // set small motor acceleration
+        small_motor->setAcceleration(dat); // update motor controller
+        small_motor->applySpeedAcceleration();
+        smallmotorAccel = dat; // update local var
+      } else if (strcmp("speedout", cmd) == 0 ) { // command "speedout" 
+        bigmotorOut = dat;
+      } else if (strcmp("speedin", cmd) == 0 ) { // command "speedin" 
+        bigmotorIn = dat;
+      } else if (strcmp("motspeed", cmd) == 0 ) { // command "motspeed" 
+        bigmotorSpeed = dat;
+        updateSpeed = true;
+      } else if (strcmp("motaccel", cmd) == 0 ) { 
+        big_motor->setAcceleration(bigmotorAccel);
+        big_motor->applySpeedAcceleration();
+        bigmotorAccel = dat; // update big motor accelleration 
+      } else if (strcmp("lubeamt", cmd) == 0 ) { 
+        lubeAmt = dat; // update number of steps lube motor will run
+      } else if (strcmp("lubefreq", cmd) == 0 ) {
+        lubeFreq = dat;
+      } else if (strcmp("update", cmd) == 0 ) {
+        updateClient = true;
+      } else if (strcmp("inputs", cmd) == 0 ) {
+        uint8_t mySW1 = digitalRead(LIMIT_SW1);
+        uint8_t mySW2 = digitalRead(LIMIT_SW2);
+        uint8_t myESTOP = digitalRead(EMERGENCY_STOP_PIN);
+        ws.printfAll("SW1 %u pos %i SW2 %u pos %i eStop %u", mySW1, sw1Pos, mySW2, sw2Pos, myESTOP);
+      } else if (strcmp("debugmot", cmd) == 0 ) {
+        debugMotor = true;
+      } else if (strcmp("motenabled", cmd) == 0 ) {
+        if (dat == 1) {
+          strcpy(tmpBuffer.msgArray, "Motors enabled.");
+          xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+          digitalWrite(BIG_MOTOR_SLEEP, HIGH); // enable motor driver
+          // digitalWrite(SMALL_MOTOR_SLEEP, HIGH); // enable motor driver
+          motEnabled = true;
+          if (!initComplete) initMotors = true; // set flag to initialize motors for the first time
+        }
+        else {
+          strcpy(tmpBuffer.msgArray, "Motors disabled.");
+          xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+          digitalWrite(BIG_MOTOR_SLEEP, LOW); // disable motor driver
+          // digitalWrite(SMALL_MOTOR_SLEEP, LOW); // disable motor driver
+          motEnabled = false;
+        }
+      } 
     } // end message queue check
 
     if (progRunning && progNextStep) // process JSON program commands
@@ -603,6 +599,7 @@ void runStepper(void * parameter) // task to handle motor related commands
       // ws.printfAll("Program step %u of %u", progPointer, progSteps);
 
       if (progPointer <= progSteps) { // load next step
+        motLast = millis();
         progReps = program[key]["reps"]; // how many times to repeat this command, only for strokes
         const char* progFnc = program[key]["fnc"]; // read function from json
         const char* progDesc = program[key]["desc"]; // text description of this step
@@ -736,46 +733,46 @@ void runStepper(void * parameter) // task to handle motor related commands
       ws.textAll("Motor init complete.");
     }
     
-    if (runTest) // run a self test on the big motor
-    {
-#ifdef MOTOR_TEST
+//     if (runTest) // run a self test on the big motor
+//     {
+// #ifdef MOTOR_TEST
   
-      if (big_motor->isRunning()) {
-        Serial.printf("currentpos %i target %i\n", big_motor->getCurrentPosition(), big_motor->targetPos());
-      } else {
-        if (bigmotorDir) {
-          big_motor->moveTo(-2000);
-          bigmotorDir = false;
-        } else {
-          big_motor->moveTo(2000);
-          bigmotorDir = true;
-        }
-      }
-#else
-      if (!big_motor->isMotorRunning()) { // test to see if motor is done moving
-        big_motor->setSpeedInHz(bigmotorSpeed);
-        bigmotorDir = bigmotorDir ^ 1; // flip direction
-        if (bigmotorDir) {
-          localMove = bigmotorMove;
-        } else {
-          bigmotorSpeed = bigmotorSpeed + 100; // increase speed
-          if (bigmotorSpeed > BIG_MOTOR_HZ) { // reset speed
-            bigmotorSpeed = 100;
-          }
-          localMove = bigmotorMove * (-1);
-          bigmotorMove = bigmotorMove + 50; // increase travel
-          if (bigmotorMove > 1000) { // reset travel
-            bigmotorMove = 50;
-          }
-        }
+//       if (big_motor->isRunning()) {
+//         Serial.printf("currentpos %i target %i\n", big_motor->getCurrentPosition(), big_motor->targetPos());
+//       } else {
+//         if (bigmotorDir) {
+//           big_motor->moveTo(-2000);
+//           bigmotorDir = false;
+//         } else {
+//           big_motor->moveTo(2000);
+//           bigmotorDir = true;
+//         }
+//       }
+// #else
+//       if (!big_motor->isMotorRunning()) { // test to see if motor is done moving
+//         big_motor->setSpeedInHz(bigmotorSpeed);
+//         bigmotorDir = bigmotorDir ^ 1; // flip direction
+//         if (bigmotorDir) {
+//           localMove = bigmotorMove;
+//         } else {
+//           bigmotorSpeed = bigmotorSpeed + 100; // increase speed
+//           if (bigmotorSpeed > BIG_MOTOR_HZ) { // reset speed
+//             bigmotorSpeed = 100;
+//           }
+//           localMove = bigmotorMove * (-1);
+//           bigmotorMove = bigmotorMove + 50; // increase travel
+//           if (bigmotorMove > 1000) { // reset travel
+//             bigmotorMove = 50;
+//           }
+//         }
         
-        big_motor->move(localMove);
-        sprintf(tmpBuffer.msgArray, "speed %u moving %i", bigmotorSpeed, localMove);
-        xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
-        // ws.printfAll("speed %u moving %i", bigmotorSpeed, localMove);
-      } 
-#endif
-    } // end of runtest
+//         big_motor->move(localMove);
+//         sprintf(tmpBuffer.msgArray, "speed %u moving %i", bigmotorSpeed, localMove);
+//         xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+//         // ws.printfAll("speed %u moving %i", bigmotorSpeed, localMove);
+//       } 
+// #endif
+//     } // end of runtest
 
     if (listFiles) // send list of SPIFFs files to client
     {
@@ -796,18 +793,30 @@ void runStepper(void * parameter) // task to handle motor related commands
       root.close();
     }
 
+    if (motSleep) // disable motor if idle long enough
+    {
+      if ((millis() - motLast > motSleepTime) && motEnabled) {
+        strcpy(tmpBuffer.msgArray, "Motors going to sleep.");
+        xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+        digitalWrite(BIG_MOTOR_SLEEP, LOW); // disable motor driver
+        // digitalWrite(SMALL_MOTOR_SLEEP, LOW); // disable motor driver
+        motEnabled = false; // clear flag
+        updateClient = true; // set flag
+      }
+    }
+
     if (updateClient) // send some parameters to client on request, crashes ESP if run too often
     {
       updateClient = false;
 
-      const char* mySwitches = "{\"switches\":{\"runtest\":%i,\"motenabled\":%i,\"autostroke\":%i,\"autolube\":%i,\"dualspeed\":%i}}";
+      const char* mySwitches = "{\"switches\":{\"motsleep\":%i,\"motsleep\":%i,\"autostroke\":%i,\"autolube\":%i,\"dualspeed\":%i}}";
       const char* myConfig = "{\"speedin\":%u,\"speedout\":%u,\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i,\"lubespeed\":%u,\"lubeaccel\":%u}";
       // const char* myProg = "Program running %i step %u/%u";
 
       sprintf(tmpBuffer.msgArray, myConfig, bigmotorIn, bigmotorOut, lubeFreq, lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, bigmotorMove, smallmotorSpeed, smallmotorAccel);
       xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
       
-      sprintf(tmpBuffer.msgArray, mySwitches, runTest, motEnabled, autoStroke, autoLube, dualSpeed);
+      sprintf(tmpBuffer.msgArray, mySwitches, motSleep, motEnabled, autoStroke, autoLube, dualSpeed);
       xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
 
       // sprintf(tmpBuffer.msgArray, myProg, progRunning, progPointer, progSteps);
@@ -832,10 +841,12 @@ void runStepper(void * parameter) // task to handle motor related commands
 
       // sprintf(tmpBuffer.msgArray, smallMotor, small_motor->isRunning(), small_motor->getSpeedInUs(), small_motor->getCurrentPosition(), small_motor->targetPos());
       // xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+      motLast = millis();
     }
 
-    if ((updateDepth == true) && (autoStroke != true) && (runTest != true)) // update depth position on big motor
+    if ((updateDepth == true) && (autoStroke != true)) // update depth position on big motor
     {
+      motLast = millis();
       updateDepth = false;
       if (progRunning) progNextStep = true; // set flag for next step as needed
       big_motor->applySpeedAcceleration();
@@ -847,6 +858,7 @@ void runStepper(void * parameter) // task to handle motor related commands
 
     if (updateSpeed) // update RPMs for big motor
     {
+      motLast = millis();
       updateSpeed = false;
       big_motor->setSpeedInHz(bigmotorSpeed);
       big_motor->applySpeedAcceleration();
@@ -867,6 +879,7 @@ void runStepper(void * parameter) // task to handle motor related commands
     {
       if (initComplete && motEnabled) { // check if motors are setup first
         updateDepth = false;
+        motLast = millis();
         if (big_motor->getCurrentPosition() >= bigmotorMove + bigmotorDepth) {
           if (dualSpeed) {
             big_motor->setSpeedInHz(bigmotorIn);
@@ -880,8 +893,8 @@ void runStepper(void * parameter) // task to handle motor related commands
           }
           big_motor->applySpeedAcceleration();
           big_motor->moveTo(bigmotorDepth); // return to home position
-          sprintf(tmpBuffer.msgArray, "Stroke %u rep %u speed %u", strokeCnt, progRepCnt, bigmotorSpeed);
-          xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // add message to the transmit queue     
+          // sprintf(tmpBuffer.msgArray, "Stroke %u rep %u speed %u", strokeCnt, progRepCnt, bigmotorSpeed);
+          // xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // add message to the transmit queue     
             // ws.printfAll("stroke %u complete", strokeCnt);
         } else if (big_motor->getCurrentPosition() <= bigmotorDepth) {
           if (dualSpeed) {
@@ -916,22 +929,19 @@ void runStepper(void * parameter) // task to handle motor related commands
 
     if (shootLube) // dispense lubrication on demand
     {
-      if (initComplete) { 
-        shootLube = false;
-        if (!small_motor->isRunning()) { // only run motor if it's not running already
-          small_motor->setCurrentPosition(0); // zero out position
-          small_motor->move(lubeAmt); // run motor so many steps
-          sprintf(tmpBuffer.msgArray, "Dispensing lubricant %u", lubeAmt);
-          xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
-        }
-      } else {
-        initMotors = true;
-      }
+      shootLube = false;
+      if (!small_motor->isRunning()) { // only run motor if it's not running already
+        small_motor->setCurrentPosition(0); // zero out position
+        small_motor->move(lubeAmt); // run motor so many steps
+        sprintf(tmpBuffer.msgArray, "Dispensing lubricant %u", lubeAmt);
+        xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+      } 
     }
 
     if (doDelay) // disable autostroke for a time period as requested by program
     {
       currentMillis = millis(); // update clock
+      motLast = millis(); // update timer for motor sleep
       autoStroke = false; // disable autostroke
       if (currentMillis - previousMillis > delayMillis) { // delay is over
         doDelay = false;

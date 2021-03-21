@@ -177,7 +177,7 @@ ons.ready(function() {
         } else { // unchecked
           myMessage.dat = 0x00;
         }
-      } else if (myId=="runtest") {
+      } else if (myId=="motsleep") {
         myMessage.fnc = "motor";
         myMessage.cmd = myId;
         if (myValue) { // checked
