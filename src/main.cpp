@@ -455,6 +455,7 @@ void runStepper(void * parameter) // task to handle motor related commands
           // successfully opened, proceed
           StaticJsonDocument<500> config;
 
+          config["motsleep"]  = motSleep;
           config["motspeed"]  = bigmotorSpeed;
           config["speedout"]  = bigmotorOut;
           config["speedin"]   = bigmotorIn;
@@ -489,6 +490,7 @@ void runStepper(void * parameter) // task to handle motor related commands
           if (error) {
             ws.textAll("Config error: unable to deserialize JSON.");
           } else {
+            motSleep        = config["motsleep"]  | true;
             bigmotorSpeed   = config["motspeed"]  | BIG_MOTOR_HZ;
             bigmotorOut     = config["speedout"]  | BIG_MOTOR_HZ;
             bigmotorIn      = config["speedin"]   | BIG_MOTOR_HZ;
@@ -511,6 +513,7 @@ void runStepper(void * parameter) // task to handle motor related commands
       if (strcmp("motsleep", cmd) == 0 ) { // positioning test on big motor
         if (dat == 1) { 
           motSleep = true;
+          motLast = millis();
         } else {
           motSleep = false;
         }
@@ -809,7 +812,7 @@ void runStepper(void * parameter) // task to handle motor related commands
     {
       updateClient = false;
 
-      const char* mySwitches = "{\"switches\":{\"motsleep\":%i,\"motsleep\":%i,\"autostroke\":%i,\"autolube\":%i,\"dualspeed\":%i}}";
+      const char* mySwitches = "{\"switches\":{\"motsleep\":%i,\"motenabled\":%i,\"autostroke\":%i,\"autolube\":%i,\"dualspeed\":%i}}";
       const char* myConfig = "{\"speedin\":%u,\"speedout\":%u,\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i,\"lubespeed\":%u,\"lubeaccel\":%u}";
       // const char* myProg = "Program running %i step %u/%u";
 
