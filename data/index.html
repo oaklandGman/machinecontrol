@@ -54,9 +54,11 @@
             <div class="center">Dual speed stroke</div>
             <div class="right"><ons-switch id="dualspeed"></ons-switch></div>
           </ons-list-item>
+          <ons-list-item>
+            <div class="center">Auto Increase Depth</div>
+            <div class="right"><ons-switch id="rampdepth"></ons-switch></div>
+          </ons-list-item>
           </ons-list>
-        <ons-button id="calibrate" class="button" modifier="large">Calibrate</ons-button>
-        <p></p>
         <ons-button id="shootlube" class="button" modifier="large">Shoot Lube</ons-button>
         <p></p>
         <ons-button id="update" class="button" modifier="large">Update Client</ons-button>
@@ -74,6 +76,8 @@
       <section style="padding: 8px; text-align: center;">
         <p><ons-input style="width: 80%;" id="strokelen" placeholder="Stroke Length" modifier="material underbar" class="numbox" type="number" min="0" max="800" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="strokedep" placeholder="Stroke Depth" modifier="material underbar" class="numbox" type="number" min="-800" max="800" float></ons-input></p>
+        <p><ons-input style="width: 80%;" id="dstrokecnt" placeholder="Depth Ramp Strokes" modifier="material underbar" class="numbox" type="number" min="10" max="100" float></ons-input></p>
+        <p><ons-input style="width: 80%;" id="dstrokeincr" placeholder="Depth Ramp Increase" modifier="material underbar" class="numbox" type="number" min="1" max="100" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="motspeed" placeholder="Single Speed" modifier="material underbar" class="numbox" type="number" min="0" max="10000" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="speedin" placeholder="Retract Speed" modifier="material underbar" class="numbox" type="number" min="0" max="10000" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="speedout" placeholder="Extend Speed" modifier="material underbar" class="numbox" type="number" min="0" max="10000" float></ons-input></p>
@@ -92,6 +96,8 @@
   <template id="debugtab.html">
     <ons-page id="debug">
       <section style="padding: 8px;">
+        <ons-button id="calibrate" class="button" modifier="large">Calibrate</ons-button>
+        <p></p>
         <ons-button id="debugmot" class="button" modifier="large">Debug Motor Info</ons-button>
         <p></p>
         <ons-button id="info" class="button" modifier="large">Memory Usage Info</ons-button>

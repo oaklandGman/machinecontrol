@@ -209,6 +209,14 @@ ons.ready(function() {
         } else { // unchecked
           myMessage.dat = 0x00;
         }
+      } else if (myId=="rampdepth") {
+        myMessage.fnc = "motor"; 
+        myMessage.cmd = myId; 
+        if (myValue) { // checked
+          myMessage.dat = 0x01;
+        } else { // unchecked
+          myMessage.dat = 0x00;
+        }
       }
   
       if (myMessage.dat != null){ // function, command, value

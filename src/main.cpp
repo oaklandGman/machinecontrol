@@ -52,10 +52,10 @@ const uint8_t HSPI_CS    = 15;
 
 // Speed settings
 const unsigned int MAX_ACCEL         = 4294967295;
-const unsigned int BIG_MOTOR_HZ      = 9000;
-const unsigned int BIG_MOTOR_ACCEL   = 40000;
-const unsigned int SMALL_MOTOR_HZ    = 400;
-const unsigned int SMALL_MOTOR_ACCEL = 400; // infinite acceleration
+const unsigned int BIG_MOTOR_HZ      = 200;
+const unsigned int BIG_MOTOR_ACCEL   = 32000;
+const unsigned int SMALL_MOTOR_HZ    = 1200;
+const unsigned int SMALL_MOTOR_ACCEL = 3200; 
 
 struct WSmsg // structure for msgpack messages to send/recv over websocket
 {
@@ -271,6 +271,7 @@ void runStepper(void * parameter) // task to handle motor related commands
   bool listFiles = false; // flag to send list of files to client
   bool rampSpeed = false; // flag to auto increase stroke speed
   bool rampLength = false; // flag to auto increase stroke length
+  bool rampDepth = false; // flag to auto increase stroke depth
   bool rndLength = false; // flag to auto randomize stroke length
   bool sw1Trip = false; // flag for limit switch 1
   bool sw2Trip = false; // flag for limit switch 2
@@ -290,6 +291,9 @@ void runStepper(void * parameter) // task to handle motor related commands
   unsigned int bigmotorAccel   = BIG_MOTOR_ACCEL; // accelleration of big motor
   unsigned int smallmotorSpeed = SMALL_MOTOR_HZ; // speed of small motor
   unsigned int smallmotorAccel = SMALL_MOTOR_ACCEL; // acceleration for small motor
+  unsigned int depthStrokes    = 0; // counter for auto increase depth
+  unsigned int depthStrokeCnt  = 5; // ramp depth after N strokes
+  unsigned int depthStrokeIncr = 10; // ramp depth by N units
 
   int bigmotorMove = 200; // stroke length
   int bigmotorDepth = 0; // stroke depth (offset from 0)
@@ -464,6 +468,8 @@ void runStepper(void * parameter) // task to handle motor related commands
           config["lubefreq"]  = lubeFreq;
           config["lubespeed"] = smallmotorSpeed;
           config["lubeaccel"] = smallmotorAccel;
+          config["dstrokecnt"] = depthStrokeCnt;
+          config["dstrokeincr"] = depthStrokeIncr;
 
           if (serializeJsonPretty(config, file) == 0) { // write contents to file
             ws.textAll("Config error: failed to write to config.json");
@@ -499,6 +505,8 @@ void runStepper(void * parameter) // task to handle motor related commands
             lubeFreq        = config["lubefreq"]  | 10;
             smallmotorSpeed = config["lubespeed"] | SMALL_MOTOR_HZ;
             smallmotorAccel = config["lubeaccel"] | SMALL_MOTOR_ACCEL;
+            depthStrokeCnt  = config["dstrokecnt"] | 10;
+            depthStrokeIncr = config["dstrokeincr"] | 10;
 
             initMotors = true; // activate some of the parameter changes
             updateClient = true; // set flag to push update to clients
@@ -524,6 +532,13 @@ void runStepper(void * parameter) // task to handle motor related commands
         } else {
           autoStroke = false;
         }
+      } else if (strcmp("rampdepth", cmd) == 0 ) { // command "autostroke"
+        if (dat == 1) {
+          depthStrokes = 0;
+          rampDepth = true;
+        } else {
+          rampDepth = false;
+        }
       } else if (strcmp("autolube", cmd) == 0 ) { // command "autolube"
         if (dat == 1) autoLube = true;
         else autoLube = false;
@@ -535,12 +550,16 @@ void runStepper(void * parameter) // task to handle motor related commands
       } else if (strcmp("calibrate", cmd) == 0 ) { // command "calibrate" 
         runCal = true;
       } else if (strcmp("strokelen", cmd) == 0 ) { // command "strokelen"
-        bigmotorMove = dat;
+        if ((dat>=10) && (dat<=600)) bigmotorMove = dat;
         updateStroke = true;
       } else if (strcmp("strokedep", cmd) == 0 ) { // command "strokedep" 
-        bigmotorDepth = dat;
+        if ((dat>=-2000) && (dat<=2000)) bigmotorDepth = dat;
         updateDepth = true;
         updateStroke = true;
+      } else if (strcmp("dstrokecnt", cmd) == 0 ) { // command "dstrokecnt" 
+        if ((dat>=5) && (dat<=100)) depthStrokeCnt = dat;
+      } else if (strcmp("dstrokeincr", cmd) == 0 ) { // command "dstrokeincr" 
+        if ((dat>=5) && (dat<=100)) depthStrokeIncr = dat;
       } else if (strcmp("lubespeed", cmd) == 0 ) { // set small motor speed
         small_motor->setSpeedInHz(dat); // update motor controller
         small_motor->applySpeedAcceleration();
@@ -550,20 +569,20 @@ void runStepper(void * parameter) // task to handle motor related commands
         small_motor->applySpeedAcceleration();
         smallmotorAccel = dat; // update local var
       } else if (strcmp("speedout", cmd) == 0 ) { // command "speedout" 
-        bigmotorOut = dat;
+        if ((dat>=10) && (dat<=5000)) bigmotorOut = dat;
       } else if (strcmp("speedin", cmd) == 0 ) { // command "speedin" 
-        bigmotorIn = dat;
+        if ((dat>=10) && (dat<=5000)) bigmotorIn = dat;
       } else if (strcmp("motspeed", cmd) == 0 ) { // command "motspeed" 
-        bigmotorSpeed = dat;
+        if ((dat>=10) && (dat<=5000)) bigmotorSpeed = dat;
         updateSpeed = true;
       } else if (strcmp("motaccel", cmd) == 0 ) { 
         big_motor->setAcceleration(bigmotorAccel);
         big_motor->applySpeedAcceleration();
         bigmotorAccel = dat; // update big motor accelleration 
       } else if (strcmp("lubeamt", cmd) == 0 ) { 
-        lubeAmt = dat; // update number of steps lube motor will run
+        if ((dat>=10) && (dat<=8000)) lubeAmt = dat; // update number of steps lube motor will run
       } else if (strcmp("lubefreq", cmd) == 0 ) {
-        lubeFreq = dat;
+        if ((dat>=1) && (dat<=50)) lubeFreq = dat;
       } else if (strcmp("update", cmd) == 0 ) {
         updateClient = true;
       } else if (strcmp("inputs", cmd) == 0 ) {
@@ -813,10 +832,10 @@ void runStepper(void * parameter) // task to handle motor related commands
       updateClient = false;
 
       const char* mySwitches = "{\"switches\":{\"motsleep\":%i,\"motenabled\":%i,\"autostroke\":%i,\"autolube\":%i,\"dualspeed\":%i}}";
-      const char* myConfig = "{\"speedin\":%u,\"speedout\":%u,\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i,\"lubespeed\":%u,\"lubeaccel\":%u}";
+      const char* myConfig = "{\"dstrokecnt\":%i,\"dstrokeincr\":%i,\"speedin\":%u,\"speedout\":%u,\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i,\"lubespeed\":%u,\"lubeaccel\":%u}";
       // const char* myProg = "Program running %i step %u/%u";
 
-      sprintf(tmpBuffer.msgArray, myConfig, bigmotorIn, bigmotorOut, lubeFreq, lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, bigmotorMove, smallmotorSpeed, smallmotorAccel);
+      sprintf(tmpBuffer.msgArray, myConfig, depthStrokeCnt, depthStrokeIncr, bigmotorIn, bigmotorOut, lubeFreq, lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, bigmotorMove, smallmotorSpeed, smallmotorAccel);
       xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
       
       sprintf(tmpBuffer.msgArray, mySwitches, motSleep, motEnabled, autoStroke, autoLube, dualSpeed);
@@ -883,7 +902,7 @@ void runStepper(void * parameter) // task to handle motor related commands
       if (initComplete && motEnabled) { // check if motors are setup first
         updateDepth = false;
         motLast = millis();
-        if (big_motor->getCurrentPosition() >= bigmotorMove + bigmotorDepth) {
+        if (big_motor->getCurrentPosition() >= bigmotorMove + bigmotorDepth) { // extend stroke completed
           if (dualSpeed) {
             big_motor->setSpeedInHz(bigmotorIn);
           }
@@ -899,12 +918,20 @@ void runStepper(void * parameter) // task to handle motor related commands
           // sprintf(tmpBuffer.msgArray, "Stroke %u rep %u speed %u", strokeCnt, progRepCnt, bigmotorSpeed);
           // xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // add message to the transmit queue     
             // ws.printfAll("stroke %u complete", strokeCnt);
-        } else if (big_motor->getCurrentPosition() <= bigmotorDepth) {
+        } else if (big_motor->getCurrentPosition() <= bigmotorDepth) { // return stroke completed
           if (dualSpeed) {
             big_motor->setSpeedInHz(bigmotorOut);
           }
           if (rampLength) {
             bigmotorMove = bigmotorMove + lengthIncr; // increase length
+          }
+          if (rampDepth && !big_motor->isRunning()) { // auto increase depth only if motor not running
+            if (depthStrokes >= depthStrokeCnt) { // increment counter and check against program
+              bigmotorDepth = bigmotorDepth + depthStrokeIncr; // increase depth after N strokes
+              // ws.printfAll("Config: auto inc depth +%i to %i", depthStrokes, depthStrokeIncr, bigmotorDepth); // debug message
+              depthStrokes = 0;  // reset counter
+            }
+            depthStrokes++; // increment counter
           }
           if (rampSpeed) {
             bigmotorSpeed = bigmotorSpeed + speedIncr; // increase speed
