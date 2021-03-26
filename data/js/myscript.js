@@ -43,7 +43,7 @@ ons.ready(function() {
             } else {
               // text frame
               var dataMsg = msg.data + '';
-              // console.log(dataMsg);
+              console.log(dataMsg);
               if (isJson(dataMsg)) {
                 var myJson = JSON.parse(dataMsg);
                 for (key in myJson) {
@@ -210,6 +210,22 @@ ons.ready(function() {
           myMessage.dat = 0x00;
         }
       } else if (myId=="rampdepth") {
+        myMessage.fnc = "motor"; 
+        myMessage.cmd = myId; 
+        if (myValue) { // checked
+          myMessage.dat = 0x01;
+        } else { // unchecked
+          myMessage.dat = 0x00;
+        }
+      } else if (myId=="rampspeed" || myId=="rampspeedtime") {
+        myMessage.fnc = "motor"; 
+        myMessage.cmd = myId; 
+        if (myValue) { // checked
+          myMessage.dat = 0x01;
+        } else { // unchecked
+          myMessage.dat = 0x00;
+        }
+      } else if (myId=="ramplength" || myId=="ramplengthtime") {
         myMessage.fnc = "motor"; 
         myMessage.cmd = myId; 
         if (myValue) { // checked
