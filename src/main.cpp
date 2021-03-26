@@ -482,8 +482,10 @@ void runStepper(void * parameter) // task to handle motor related commands
           config["dstrokeincr"] = depthStrokeIncr;
           config["speedincr"] = speedIncr;
           config["speedmax"] = speedMax;
+          config["speedinterval"] = speedInterval;
           config["lengthincr"] = lengthIncr;
           config["lengthmax"] = lengthMax;
+          config["lengthinterval"] = lengthInterval;
 
           if (serializeJsonPretty(config, file) == 0) { // write contents to file
             ws.textAll("Config error: failed to write to config.json");
@@ -523,8 +525,10 @@ void runStepper(void * parameter) // task to handle motor related commands
             depthStrokeIncr = config["dstrokeincr"] | 10;
             speedIncr       = config["speedincr"] | 0;
             speedMax        = config["speedmax"] | 0;
+            speedInterval   = config["speedinterval"] | 0;
             lengthIncr      = config["lengthincr"] | 0;
             lengthMax       = config["lengthmax"] | 0;
+            lengthInterval  = config["lengthinterval"] | 0;
 
 
 
