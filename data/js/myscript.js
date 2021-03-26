@@ -44,22 +44,27 @@ ons.ready(function() {
               // text frame
               var dataMsg = msg.data + '';
               console.log(dataMsg);
-              if (isJson(dataMsg)) {
+              if (isJson(dataMsg)) { // it's JSON!
                 var myJson = JSON.parse(dataMsg);
-                for (key in myJson) {
-                  if (key != "switches") {
-                    document.getElementById(key).value = myJson[key];
-                  } else {
-                    for ( sw in myJson.switches ) {
-                      if (myJson.switches[sw]) {
-                        document.getElementById(sw).checked = true;
-                      } else {
-                        document.getElementById(sw).checked = false;  
+                try{
+                  for (key in myJson) {
+                    if (key != "switches") {
+                      document.getElementById(key).value = myJson[key];
+                    } else {
+                      for ( sw in myJson.switches ) {
+                        if (myJson.switches[sw]) {
+                          document.getElementById(sw).checked = true;
+                        } else {
+                          document.getElementById(sw).checked = false;  
+                        }
                       }
                     }
                   }
+                } 
+                catch(e){
+                  console.log("Unknown key, error " + e);
                 }
-              } else {
+              } else { // not JSON
                 var myKey = dataMsg.substring(0,4);
                 if(myKey=="Exec" || myKey=="Prog") { // received program exec message
                   if (dataMsg.indexOf("file")>0) { // make filenames tappable
