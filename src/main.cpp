@@ -289,7 +289,9 @@ void runStepper(void * parameter) // task to handle motor related commands
   unsigned long eStopLast     = currentMillis;
   unsigned long rampSpeedTimeLast = 0; // keep track of when last speed increase was
   unsigned long rampLengthTimeLast = 0; // keep track of when last length increase was
-  
+  unsigned long varySpeedTimeLast = 0; // keep track of when last speed vary was
+  unsigned long varyLengthTimeLast = 0; // keep track of when last speed vary was
+
   unsigned int speedMax        = 0; // max speed for auto increase routine
   unsigned int speedInterval   = 0; // time interval for speed change
   unsigned int speedIncr = 0; // how much to increase speed each time
@@ -313,24 +315,23 @@ void runStepper(void * parameter) // task to handle motor related commands
   int bigmotorDepth = 0; // offset from 0 home position
   int localMove = 0; // used in selftest routine
   int lengthMax = 0; // max length for auto increase routine
-  
-  
-  
+   
   int32_t sw1Pos = 0; // step count for limit switch 1
   int32_t sw2Pos = 0; // step count for limit switch 2
 
-  uint8_t strokeCnt    = 0; // number of strokes since last lube
-  uint8_t lubeFreq     = 10; // number of strokes between lube
-  uint8_t progPointer  = 0; // where are we at in the program
-  uint8_t progReps     = 0; // number of reps for current program command
-  uint8_t progRepCnt   = 0; // counter for number of reps completed
-  uint8_t progSteps    = 0; // number of steps in program
-  uint8_t progLoopCnt  = 0; // number of times program has looped
-  uint8_t sw1LastRead  = 0; // record last state of sw1
-  uint8_t sw2LastRead  = 0; // last state of sw2
-  uint8_t sw1Read      = 0; // reading from sw1
-  uint8_t sw2Read      = 0; // reading from sw2
-
+  uint8_t strokeCnt     = 0; // number of strokes since last lube
+  uint8_t lubeFreq      = 10; // number of strokes between lube
+  uint8_t progPointer   = 0; // where are we at in the program
+  uint8_t progReps      = 0; // number of reps for current program command
+  uint8_t progRepCnt    = 0; // counter for number of reps completed
+  uint8_t progSteps     = 0; // number of steps in program
+  uint8_t progLoopCnt   = 0; // number of times program has looped
+  uint8_t sw1LastRead   = 0; // record last state of sw1
+  uint8_t sw2LastRead   = 0; // last state of sw2
+  uint8_t sw1Read       = 0; // reading from sw1
+  uint8_t sw2Read       = 0; // reading from sw2
+  uint8_t speedVaryAmt  = 0; // percentage for auto variable speed
+  uint8_t lengthVaryAmt = 0; // percentage for auto variable length
 
   const unsigned long motSleepTime = (1000 * 60 * 10); // 15 minutes
   const char* configFile = "/config.json";
@@ -467,7 +468,7 @@ void runStepper(void * parameter) // task to handle motor related commands
           ws.textAll("Config error: failed to open config.json for writing."); // failed to open, abort
         } else {
           // successfully opened, proceed
-          StaticJsonDocument<500> config;
+          StaticJsonDocument<700> config;
 
           config["motsleep"]  = motSleep;
           config["motspeed"]  = bigmotorSpeed;
@@ -483,14 +484,17 @@ void runStepper(void * parameter) // task to handle motor related commands
           config["speedincr"] = speedIncr;
           config["speedmax"] = speedMax;
           config["speedinterval"] = speedInterval;
+          config["speedvaryamt"] = speedVaryAmt;
           config["lengthincr"] = lengthIncr;
           config["lengthmax"] = lengthMax;
           config["lengthinterval"] = lengthInterval;
+          config["lengthvaryamt"] = lengthVaryAmt;
 
           if (serializeJsonPretty(config, file) == 0) { // write contents to file
             ws.textAll("Config error: failed to write to config.json");
           } else {
-            ws.textAll("Config file saved.");
+            ws.printfAll("Config file saved; JSON memory usage %i elements %i",config.memoryUsage(), config.size());
+            // ws.textAll("Config file saved.");
           }
 
           file.close(); // close file handle
@@ -505,17 +509,18 @@ void runStepper(void * parameter) // task to handle motor related commands
           ws.textAll("Config error: failed to open config.json for reading."); // failed to open, abort
         } else {
           // successfully opened, proceed
-          StaticJsonDocument<500> config;
+          StaticJsonDocument<700> config;
 
           // Deserialize the JSON document
           DeserializationError error = deserializeJson(config, file);
           if (error) {
             ws.textAll("Config error: unable to deserialize JSON.");
           } else {
+            ws.printfAll("Config file opened; JSON memory usage %i elements %i",config.memoryUsage(), config.size());
             motSleep        = config["motsleep"]  | true;
-            bigmotorSpeed   = config["motspeed"]  | BIG_MOTOR_HZ;
-            bigmotorOut     = config["speedout"]  | BIG_MOTOR_HZ;
-            bigmotorIn      = config["speedin"]   | BIG_MOTOR_HZ;
+            bigmotorSpeed   = config["motspeed"]  | 200;
+            bigmotorOut     = config["speedout"]  | 600;
+            bigmotorIn      = config["speedin"]   | 600;
             bigmotorAccel   = config["motaccel"]  | BIG_MOTOR_ACCEL;
             lubeAmt         = config["lubeamt"]   | 200;
             lubeFreq        = config["lubefreq"]  | 10;
@@ -526,9 +531,11 @@ void runStepper(void * parameter) // task to handle motor related commands
             speedIncr       = config["speedincr"] | 0;
             speedMax        = config["speedmax"] | 0;
             speedInterval   = config["speedinterval"] | 0;
+            speedVaryAmt    = config["speedvaryamt"] | 0;
             lengthIncr      = config["lengthincr"] | 0;
             lengthMax       = config["lengthmax"] | 0;
             lengthInterval  = config["lengthinterval"] | 0;
+            lengthVaryAmt   = config["lengthvaryamt"] | 0;
 
 
 
@@ -922,7 +929,7 @@ void runStepper(void * parameter) // task to handle motor related commands
       const char* myConfig = "{\"lengthincr\":%u,\"lengthmax\":%i,\"speedincr\":%u,\"speedmax\":%i,\"dstrokecnt\":%i,\"dstrokeincr\":%i,\"speedin\":%u,\"speedout\":%u,\"speedinterval\":%u,\"lengthinterval\":%u}";
 
       const char* mySwitches2 = "{\"switches\":{\"rampdepth\":%i,\"rampspeed\":%i,\"ramplength\":%i,\"rampspeedtime\":%i,\"ramplengthtime\":%i}}";
-      const char* myConfig2 = "{\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i,\"lubespeed\":%u,\"lubeaccel\":%u}";
+      const char* myConfig2 = "{\"lubefreq\":%u,\"lubeamt\":%u,\"motaccel\":%u,\"strokedep\":%u,\"motspeed\":%u,\"strokelen\":%i,\"speedvaryamt\":%u,\"lengthvaryamt\":%u}";
       // const char* myProg = "Program running %i step %u/%u";
 
       sprintf(tmpBuffer.msgArray, mySwitches, motSleep, motEnabled, autoStroke, autoLube, dualSpeed, lengthVariable, speedVariable);
@@ -934,7 +941,7 @@ void runStepper(void * parameter) // task to handle motor related commands
       sprintf(tmpBuffer.msgArray, mySwitches2, rampDepth, rampSpeed, rampLength, rampSpeedTime, rampLengthTime);
       xQueueSend(wsoutQueue, &tmpBuffer, (250 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
       
-      sprintf(tmpBuffer.msgArray, myConfig2, lubeFreq, lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, bigmotorMove, smallmotorSpeed, smallmotorAccel);
+      sprintf(tmpBuffer.msgArray, myConfig2, lubeFreq, lubeAmt, bigmotorAccel, bigmotorDepth, bigmotorSpeed, bigmotorMove, speedVaryAmt, lengthVaryAmt);
       xQueueSend(wsoutQueue, &tmpBuffer, (250 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
 
 
@@ -1055,6 +1062,18 @@ void runStepper(void * parameter) // task to handle motor related commands
             if (rampSpeedTime) { // time interval instead of strokes
               if (millis() - rampSpeedTimeLast > speedInterval * 1000) { // time for an increase
                 rampSpeedTimeLast = millis(); // reset timestamp
+                // if (speedVariable && (millis() - varySpeedTimeLast > speedInterval * 10000)) { // variable speed calculation
+                //   varySpeedTimeLast = millis(); // reset timestatmp
+                //   long int rndUpDown = random(10);
+                //   long int rndSpeedIncr = random(speedVaryAmt);
+                //   if (rndUpDown < 5) { // 0-4 negative, 5-9 positive
+                //     rndSpeedIncr = rndSpeedIncr * -1; // invert value
+                //   }
+                //   speedIncr = rndSpeedIncr; // update 
+                //   const char* myConfig = "{\"speedincr\":%u}";
+                //   sprintf(tmpBuffer.msgArray, myConfig, speedInterval);
+                //   xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+                // }
                 if (bigmotorSpeed + speedIncr <= speedMax) {
                   bigmotorSpeed = bigmotorSpeed + speedIncr; // increase speed
                   big_motor->setSpeedInHz(bigmotorSpeed);
@@ -1064,10 +1083,10 @@ void runStepper(void * parameter) // task to handle motor related commands
                 }
               }
             } else {
-              if (bigmotorSpeed + speedIncr <= speedMax) {
-                bigmotorSpeed = bigmotorSpeed + speedIncr; // increase speed
+              if ((bigmotorSpeed + speedIncr <= speedMax) || (bigmotorSpeed + speedIncr > bigmotorSpeed)) {
+                bigmotorSpeed = bigmotorSpeed + speedIncr; // update speed
                 big_motor->setSpeedInHz(bigmotorSpeed);
-                const char* myConfig = "{\"motspeed\":%u}";
+                const char* myConfig = "{\"motspeed\":%u}"; // send new speed to clients
                 sprintf(tmpBuffer.msgArray, myConfig, bigmotorSpeed);
                 xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
               }

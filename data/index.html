@@ -33,6 +33,11 @@
   <template id="autotab.html">
     <ons-page id="automation">
       <section style="padding: 8px; text-align: center;">
+        <ons-button id="saveconfig" class="button" modifier="large">Save Configuration</ons-button>
+        <p></p>
+        <ons-button id="loadconfig" class="button" modifier="large">Load Configuration</ons-button>
+      </section>
+      <section style="padding: 8px; text-align: center;">
         <ons-list>
           <ons-list-item>
             <div class="center">Sleep on idle</div>
@@ -83,9 +88,11 @@
             <div class="right"><ons-switch id="ramplengthtime"></ons-switch></div>
           </ons-list-item>
         </ons-list>
-        <ons-button id="shootlube" class="button" modifier="large">Shoot Lube</ons-button>
-        <p></p>
-        <ons-button id="update" class="button" modifier="large">Update Client</ons-button>
+      </section>
+      <section style="padding: 8px; text-align: center;">
+        <p><ons-input style="width: 80%;" id="motaccel" placeholder="Acceleration" modifier="material underbar" class="numbox" type="number" min="0" max="50000" float></ons-input></p>
+        <p><ons-input style="width: 80%;" id="lubeamt" placeholder="Lube Amount" modifier="material underbar" class="numbox" type="number" min="0" max="1200" float></ons-input></p>
+        <p><ons-input style="width: 80%;" id="lubefreq" placeholder="Lube Frequency" modifier="material underbar" class="numbox" type="number" min="0" max="1000" float></ons-input></p>
       </section>
     </ons-page>
   </template>
@@ -93,15 +100,14 @@
   <template id="configtab.html">
     <ons-page id="config">
       <section style="padding: 8px">
-        <ons-button id="saveconfig" class="button" modifier="large">Save Configuration</ons-button>
-        <p></p>
-        <ons-button id="loadconfig" class="button" modifier="large">Load Configuration</ons-button>
+        <ons-button id="shootlube" class="button" modifier="large">Shoot Lube</ons-button>
       </section>
       <section style="padding: 8px; text-align: center;">
         <p><ons-input style="width: 80%;" id="strokelen" placeholder="Stroke Length" modifier="material underbar" class="numbox" type="number" min="0" max="800" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="lengthincr" placeholder="Length Ramp Amount" modifier="material underbar" class="numbox" type="number" min="0" max="50" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="lengthmax" placeholder="Length Ramp Maximum" modifier="material underbar" class="numbox" type="number" min="0" max="1000" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="lengthinterval" placeholder="Length Change Interval (sec)" modifier="material underbar" class="numbox" type="number" min="0" max="900" float></ons-input></p>
+        <p><ons-input style="width: 80%;" id="lengthvaryamt" placeholder="Length Variable Percentage" modifier="material underbar" class="numbox" type="number" min="0" max="50" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="strokedep" placeholder="Stroke Depth" modifier="material underbar" class="numbox" type="number" min="-800" max="800" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="dstrokecnt" placeholder="Depth Ramp Strokes" modifier="material underbar" class="numbox" type="number" min="10" max="100" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="dstrokeincr" placeholder="Depth Ramp Increase" modifier="material underbar" class="numbox" type="number" min="1" max="100" float></ons-input></p>
@@ -109,13 +115,9 @@
         <p><ons-input style="width: 80%;" id="speedincr" placeholder="Speed Ramp Amount" modifier="material underbar" class="numbox" type="number" min="0" max="100" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="speedmax" placeholder="Speed Ramp Maximum" modifier="material underbar" class="numbox" type="number" min="0" max="4000" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="speedinterval" placeholder="Speed Change Interval (sec)" modifier="material underbar" class="numbox" type="number" min="0" max="900" float></ons-input></p>
+        <p><ons-input style="width: 80%;" id="speedvaryamt" placeholder="Speed Variable Percentage" modifier="material underbar" class="numbox" type="number" min="0" max="50" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="speedin" placeholder="Retract Speed" modifier="material underbar" class="numbox" type="number" min="0" max="10000" float></ons-input></p>
         <p><ons-input style="width: 80%;" id="speedout" placeholder="Extend Speed" modifier="material underbar" class="numbox" type="number" min="0" max="10000" float></ons-input></p>
-        <p><ons-input style="width: 80%;" id="motaccel" placeholder="Acceleration" modifier="material underbar" class="numbox" type="number" min="0" max="50000" float></ons-input></p>
-        <p><ons-input style="width: 80%;" id="lubeamt" placeholder="Lube Amount" modifier="material underbar" class="numbox" type="number" min="0" max="1200" float></ons-input></p>
-        <p><ons-input style="width: 80%;" id="lubefreq" placeholder="Lube Frequency" modifier="material underbar" class="numbox" type="number" min="0" max="1000" float></ons-input></p>
-        <!-- <p><ons-input style="width: 80%;" id="lubespeed" placeholder="Small Motor Speed" modifier="material underbar" class="numbox" type="number" min="0" float></ons-input></p>
-        <p><ons-input style="width: 80%;" id="lubeaccel" placeholder="Small Motor Accel" modifier="material underbar" class="numbox" type="number" min="0" float></ons-input></p> -->
       </section>
       <section style="padding: 8px;">
         <ons-list id="configlist"></ons-list>
@@ -133,6 +135,8 @@
         <ons-button id="info" class="button" modifier="large">Memory Usage Info</ons-button>
         <p></p>
         <ons-button id="inputs" class="button" modifier="large">Debug Inputs</ons-button>
+        <p></p>
+        <ons-button id="update" class="button" modifier="large">Update Client</ons-button>
       </section>
       <section style="padding: 8px;">
         <ons-list id="diagList"></ons-list>

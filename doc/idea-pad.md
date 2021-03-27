@@ -14,3 +14,11 @@
     a. max length - int rndMax
     b. min length - int motlength
     c. random strokes per - int rndStrokes
+
+
+UI layout
+
+Tab 1 Debug - fine how it is
+Tab 2 Manual Mode - get rid of some of the one time setup things
+Tab 3 Config - save/load config, and manual setup stuff
+Tab 4 Program - Probably ok?
