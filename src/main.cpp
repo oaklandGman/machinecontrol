@@ -692,15 +692,20 @@ void runStepper(void * parameter) // task to handle motor related commands
           if (!initComplete) initMotors = true; // set flag to initialize motors for the first time
           if (rampLengthTime) rampLengthTimeLast = millis(); // reset timestamp
           if (rampSpeedTime) rampSpeedTimeLast = millis();
+          if (motSleep) motLast = millis();
         }
         else {
           strcpy(tmpBuffer.msgArray, "Motors disabled.");
           xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
           big_motor->forceStopAndNewPosition(0);
-          small_motor->forceStopAndNewPosition(9);
+          small_motor->forceStopAndNewPosition(0);
+          bigmotorDepth = 0; // reset start position
           digitalWrite(BIG_MOTOR_SLEEP, LOW); // disable motor driver
           digitalWrite(SMALL_MOTOR_SLEEP, LOW); // disable motor driver
           motEnabled = false;
+          const char* myConfig = "{\"strokedep\":%u}";
+          sprintf(tmpBuffer.msgArray, myConfig, bigmotorDepth); // send updated depth to clients
+          xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
         }
       } 
     } // end message queue check
