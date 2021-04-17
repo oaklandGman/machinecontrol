@@ -1394,7 +1394,7 @@ void setup(){
   xTaskCreatePinnedToCore(
      wsMsgtask, /* Function to implement the task */
      "taskMSG", /* Name of the task */
-     5000,  /* Stack size in words */
+     4000,  /* Stack size in words */
      NULL,  /* Task input parameter */
      0,  /* Priority of the task */
      &taskMSG,  /* Task handle. */

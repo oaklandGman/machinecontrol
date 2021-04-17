@@ -44,18 +44,6 @@
             <div class="right"><ons-switch id="motsleep"></ons-switch></div>
           </ons-list-item>
           <ons-list-item>
-            <div class="center">Enable motors</div>
-            <div class="right"><ons-switch id="motenabled"></ons-switch></div>
-          </ons-list-item>                
-          <ons-list-item>
-            <div class="center">Auto stroke</div>
-            <div class="right"><ons-switch id="autostroke"></ons-switch></div>
-          </ons-list-item>
-          <ons-list-item>
-            <div class="center">Auto lube</div>
-            <div class="right"><ons-switch id="autolube"></ons-switch></div>
-          </ons-list-item>
-          <ons-list-item>
             <div class="center">Dual speed stroke</div>
             <div class="right"><ons-switch id="dualspeed"></ons-switch></div>
           </ons-list-item>
@@ -101,6 +89,22 @@
     <ons-page id="config">
       <section style="padding: 8px">
         <ons-button id="shootlube" class="button" modifier="large">Shoot Lube</ons-button>
+      </section>
+      <section style="padding: 8px">
+        <ons-list>
+          <ons-list-item>
+            <div class="center">Enable motors</div>
+            <div class="right"><ons-switch id="motenabled"></ons-switch></div>
+          </ons-list-item>                
+          <ons-list-item>
+            <div class="center">Auto stroke</div>
+            <div class="right"><ons-switch id="autostroke"></ons-switch></div>
+          </ons-list-item>
+          <ons-list-item>
+            <div class="center">Auto lube</div>
+            <div class="right"><ons-switch id="autolube"></ons-switch></div>
+          </ons-list-item>
+        </ons-list>
       </section>
       <section style="padding: 8px; text-align: center;">
         <p><ons-input style="width: 100%;" id="strokelen" placeholder="Stroke Length" modifier="material underbar" class="numbox" type="number" min="0" max="800" float></ons-input></p>
