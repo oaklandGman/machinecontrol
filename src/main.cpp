@@ -567,6 +567,8 @@ void runStepper(void * parameter) // task to handle motor related commands
         if (dat == 1) {
           depthStrokes = 0;
           rampDepth = true;
+
+          ws.printfAll("rampepth count %u amount %u", depthStrokeCnt, depthStrokeIncr);
         } else {
           rampDepth = false;
         }
@@ -645,9 +647,9 @@ void runStepper(void * parameter) // task to handle motor related commands
       } else if (strcmp("lengthmax", cmd) == 0 ) { // command "dstrokecnt" 
         if ((dat>=0) && (dat<=1000)) lengthMax = dat;
       } else if (strcmp("dstrokecnt", cmd) == 0 ) { // command "dstrokecnt" 
-        if ((dat>=5) && (dat<=100)) depthStrokeCnt = dat;
+        if ((dat>=1) && (dat<=100)) depthStrokeCnt = dat;
       } else if (strcmp("dstrokecnt", cmd) == 0 ) { // command "dstrokecnt" 
-        if ((dat>=5) && (dat<=100)) depthStrokeCnt = dat;
+        if ((dat>=1) && (dat<=100)) depthStrokeCnt = dat;
       } else if (strcmp("dstrokeincr", cmd) == 0 ) { // command "dstrokeincr" 
         if ((dat>=5) && (dat<=100)) depthStrokeIncr = dat;
       } else if (strcmp("lubespeed", cmd) == 0 ) { // set small motor speed
@@ -914,15 +916,20 @@ void runStepper(void * parameter) // task to handle motor related commands
       root.close();
     }
 
+
     if (motSleep) // disable motor if idle long enough
     {
       if ((millis() - motLast > motSleepTime) && motEnabled) {
+        digitalWrite(BIG_MOTOR_SLEEP, LOW); // disable motor driver
+        motEnabled = false; // clear flag
+
         strcpy(tmpBuffer.msgArray, "Motors going to sleep.");
         xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
-        digitalWrite(BIG_MOTOR_SLEEP, LOW); // disable motor driver
-        // digitalWrite(SMALL_MOTOR_SLEEP, LOW); // disable motor driver
-        motEnabled = false; // clear flag
-        updateClient = true; // set flag
+
+        const char* mySwitches = "{\"switches\":{\"motenabled\":%i}}";
+
+        sprintf(tmpBuffer.msgArray, mySwitches, motEnabled);
+        xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
       }
     }
 
@@ -1028,6 +1035,10 @@ void runStepper(void * parameter) // task to handle motor related commands
           // xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // add message to the transmit queue     
             // ws.printfAll("stroke %u complete", strokeCnt);
         } else if (big_motor->getCurrentPosition() <= bigmotorDepth) { // return stroke completed
+          // big_motor->stopMove(); // stop motor briefly
+          // while(big_motor->isStopping(){
+          //   delay(1);
+          // }
           if (dualSpeed) {
             big_motor->setSpeedInHz(bigmotorOut);
           }
@@ -1051,16 +1062,22 @@ void runStepper(void * parameter) // task to handle motor related commands
               }
             }
           }
-          if (rampDepth && !big_motor->isRunning()) { // auto increase depth only if motor not running
+          if (rampDepth && !big_motor->isMotorRunning()) { // auto increase depth 
             if (depthStrokes >= depthStrokeCnt) { // increment counter and check against program
+              depthStrokes = 0;  // reset counter
               bigmotorDepth = bigmotorDepth + depthStrokeIncr; // increase depth after N strokes
               // ws.printfAll("Config: auto inc depth +%i to %i", depthStrokes, depthStrokeIncr, bigmotorDepth); // debug message
               const char* myConfig = "{\"strokedep\":%i}";
               sprintf(tmpBuffer.msgArray, myConfig, bigmotorDepth);
               xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
 
-              depthStrokes = 0;  // reset counter
+
             }
+            // const char* bigMotor = "rampdepth count %u target %u";
+
+            // sprintf(tmpBuffer.msgArray, bigMotor, depthStrokes, depthStrokeCnt);
+            // xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
+
             depthStrokes++; // increment counter
           }
           if (rampSpeed) {
