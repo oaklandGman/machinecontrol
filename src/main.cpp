@@ -305,6 +305,7 @@ void runStepper(void * parameter) // task to handle motor related commands
   unsigned int depthStrokes    = 0; // counter for auto increase depth
   unsigned int depthStrokeCnt  = 5; // ramp depth after N strokes
   unsigned int depthStrokeIncr = 10; // ramp depth by N units
+  unsigned int newDepth = 0; // temporary storage for new depth setting
   unsigned int lubeAmt = 400; // amount of lube dispensed per request
   unsigned int lengthIncr = 0; // how much to increase length each time
   unsigned int lengthInterval   = 0; // time interval for length change
@@ -1016,8 +1017,8 @@ void runStepper(void * parameter) // task to handle motor related commands
     if (autoStroke && doDelay==false) // reciprocate big motor 
     {
       if (initComplete && motEnabled) { // check if motors are setup first
-        updateDepth = false;
         motLast = millis();
+        updateDepth = false;
         if (big_motor->getCurrentPosition() >= bigmotorMove + bigmotorDepth) { // extend stroke completed
           if (dualSpeed) {
             big_motor->setSpeedInHz(bigmotorIn);
@@ -1029,6 +1030,7 @@ void runStepper(void * parameter) // task to handle motor related commands
             progRepCnt=0; // reset counter
             progNextStep=true; // flag next command
           }
+          if (rampDepth && (newDepth != bigmotorDepth)) bigmotorDepth = newDepth; // reset stroke depth of needed
           big_motor->applySpeedAcceleration();
           big_motor->moveTo(bigmotorDepth); // return to home position
           // sprintf(tmpBuffer.msgArray, "Stroke %u rep %u speed %u", strokeCnt, progRepCnt, bigmotorSpeed);
@@ -1036,7 +1038,7 @@ void runStepper(void * parameter) // task to handle motor related commands
             // ws.printfAll("stroke %u complete", strokeCnt);
         } else if (big_motor->getCurrentPosition() <= bigmotorDepth) { // return stroke completed
           strokeComplete = true; // set flag
-          ws.printfAll("Config: stroke complete %u", strokeCnt); // debug message
+          // ws.printfAll("Config: stroke complete %u", strokeCnt); // debug message
           // big_motor->stopMove(); // stop motor briefly
           // while(big_motor->isStopping()){
           //   delay(1);
@@ -1068,10 +1070,10 @@ void runStepper(void * parameter) // task to handle motor related commands
           if (rampDepth) { // auto increase depth 
             depthStrokes++; // increment counter
             if (depthStrokes >= depthStrokeCnt) { // increase count reached
-              bigmotorDepth = bigmotorDepth + depthStrokeIncr; // increase depth 
-              ws.printfAll("Config: inc depth mot(%i) incr +%i to %i", big_motor->isMotorRunning(), depthStrokeIncr, bigmotorDepth); // debug message
+              newDepth = bigmotorDepth + depthStrokeIncr; // increase depth 
+              ws.printfAll("Config: inc depth mot(%i) incr +%i to %i", big_motor->isMotorRunning(), depthStrokeIncr, newDepth); // debug message
               const char* myConfig = "{\"strokedep\":%i}";
-              sprintf(tmpBuffer.msgArray, myConfig, bigmotorDepth);
+              sprintf(tmpBuffer.msgArray, myConfig, newDepth);
               xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
               depthStrokes = 0;  // reset counter
             }
@@ -1128,7 +1130,7 @@ void runStepper(void * parameter) // task to handle motor related commands
           big_motor->applySpeedAcceleration();
           big_motor->moveTo(bigmotorDepth); // move to depth
           updateStroke = false;
-        }
+        } // end of stroke control
       } else if (!initComplete && motEnabled) { // setup motors first
         initMotors = true;
       }
