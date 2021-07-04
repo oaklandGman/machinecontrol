@@ -303,11 +303,10 @@ void runStepper(void * parameter) // task to handle motor related commands
   unsigned int bigmotorAccel   = BIG_MOTOR_ACCEL; // accelleration of big motor
   unsigned int smallmotorSpeed = SMALL_MOTOR_HZ; // speed of small motor
   unsigned int smallmotorAccel = SMALL_MOTOR_ACCEL; // acceleration for small motor
-  unsigned int depthStrokes    = 0; // counter for auto increase depth
   unsigned int depthStrokeInt  = 5; // ramp depth after N seconds
   unsigned int depthStrokeIncr = 10; // ramp depth by N units
   unsigned int newDepth = 0; // temporary storage for new depth setting
-  unsigned int lubeAmt = 400; // amount of lube dispensed per request
+  unsigned int lubeAmt = 800; // amount of lube dispensed per request
   unsigned int lengthIncr = 0; // how much to increase length each time
   unsigned int lengthInterval   = 0; // time interval for length change
   unsigned int rndStrokes = 0; // number of strokes per random length roll
@@ -569,7 +568,7 @@ void runStepper(void * parameter) // task to handle motor related commands
         }
       } else if (strcmp("rampdepth", cmd) == 0 ) { // command to increase depth automatically
         if (dat == 1) {
-          depthStrokes = 0;
+          depthStrokeTimeLast = millis(); // reset timestamp
           rampDepth = true;
 
           ws.printfAll("rampdepth delay %u amount %u", depthStrokeInt, depthStrokeIncr);
@@ -1067,20 +1066,17 @@ void runStepper(void * parameter) // task to handle motor related commands
               // }
             }
           }
-          // if (rampDepth && !big_motor->isMotorRunning()) { // auto increase depth after strokes interval
           if (rampDepth) { // auto increase depth 
             if (millis() - depthStrokeTimeLast > depthStrokeInt * 1000) { // time for increase
               depthStrokeTimeLast = millis(); // reset timestamp
               newDepth = bigmotorDepth + depthStrokeIncr; // increase depth 
-              ws.printfAll("Config: inc depth mot(%i) incr +%i to %i", big_motor->isMotorRunning(), depthStrokeIncr, newDepth); // debug message
+              // debug message
+              ws.printfAll("Config: inc depth after %i ms to %i", depthStrokeInt * 1000, newDepth); // debug message
+              // update client
               const char* myConfig = "{\"strokedep\":%i}";
               sprintf(tmpBuffer.msgArray, myConfig, newDepth);
               xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
             }
-            // const char* bigMotor = "rampdepth count %u target %u";
-
-            // sprintf(tmpBuffer.msgArray, bigMotor, depthStrokes, depthStrokeInt);
-            // xQueueSend(wsoutQueue, &tmpBuffer, (5 / portTICK_PERIOD_MS)); // pass pointer for the message to the transmit queue     
           }
           if (rampSpeed) {
             if (rampSpeedTime) { // time interval instead of strokes
